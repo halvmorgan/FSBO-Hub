@@ -200,11 +200,13 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
           status: res.status,
           rawGeminiError: errJson.rawGeminiError || errJson.message,
           geminiStatus: errJson.geminiStatus,
+          modelTried: errJson.modelTried,
           isAiBusy: errJson.isAiBusy,
         });
         throw new Error(errJson.error || errJson.message || `AI review unavailable (${res.status})`);
       }
       const data = await res.json();
+      console.log(`[Gemini Server Diagnostic] Photo Coach answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
 
       const updated = photos.map((p) =>
         p.id === photo.id
@@ -244,11 +246,13 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
           status: res.status,
           rawGeminiError: errJson.rawGeminiError || errJson.message,
           geminiStatus: errJson.geminiStatus,
+          modelTried: errJson.modelTried,
           isAiBusy: errJson.isAiBusy,
         });
         throw new Error(errJson.error || errJson.message || `Failed to generate script (${res.status})`);
       }
       const data = await res.json();
+      console.log(`[Gemini Server Diagnostic] Walkthrough Script answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       setWalkthroughScript(data);
     } catch (err: any) {
       console.error(err);

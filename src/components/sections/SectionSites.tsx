@@ -109,9 +109,17 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
+        console.error('[Gemini Server Diagnostic for Site Rules]:', {
+          status: res.status,
+          rawGeminiError: errJson.rawGeminiError || errJson.message,
+          geminiStatus: errJson.geminiStatus,
+          modelTried: errJson.modelTried,
+          isAiBusy: errJson.isAiBusy,
+        });
         throw new Error(errJson.error || errJson.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
       }
       const data = await res.json();
+      console.log(`[Gemini Server Diagnostic] Site Rules answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
 
       const ruleData = data.ruleData || {};
       const sources = data.sources || [];

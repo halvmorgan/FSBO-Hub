@@ -58,6 +58,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
           status: res.status,
           rawGeminiError: errData.rawGeminiError || errData.message,
           geminiStatus: errData.geminiStatus,
+          modelTried: errData.modelTried,
           isAiBusy: errData.isAiBusy,
           isAiKeyMissing: errData.isAiKeyMissing,
         });
@@ -65,6 +66,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
       }
 
       const data = await res.json();
+      console.log(`[Gemini Server Diagnostic] Listing Copy answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       const updatedCopy: ListingCopyData = {
         tone,
         headline: data.headline || `${property.address} - Move-In Ready Home`,

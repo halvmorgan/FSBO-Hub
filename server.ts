@@ -213,14 +213,16 @@ class GeminiConcurrencyQueue {
 }
 const geminiQueue = new GeminiConcurrencyQueue();
 
-// Automatic Retry up to 3 times for 429/503 with exact 2s, 5s, 10s waits + fallback to Flash model
+// Resilient multi-family model fallback chain:
+// Primary stable Flash model: 'gemini-3.8-flash' (flagship stable production Flash, non-preview, non-experimental)
+// Secondary stable model from different family: 'gemini-3.1-flash-lite' (high-availability lightweight Flash-Lite family)
 async function generateContentWithRetryAndFallback(params: {
   contents: any;
   config?: any;
   mainModel?: string;
   fallbackModel?: string;
   maxRetries?: number;
-}): Promise<any> {
+}): Promise<{ response: any; modelUsed: string }> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     const err: any = new Error('AI key not configured');
@@ -239,30 +241,33 @@ async function generateContentWithRetryAndFallback(params: {
   return await geminiQueue.run(async () => {
     let lastError: any = null;
 
-    // 1. Try main model with up to 3 retries (only for 429/503)
+    // 1. Try primary stable Flash model with up to 3 retries (only for 429/503)
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(`[Gemini] trying model ${mainModel} (attempt ${attempt}/${maxRetries})`);
       try {
         const response = await aiClient.models.generateContent({
           model: mainModel,
           contents: params.contents,
           config: params.config,
         });
-        return response;
+        console.log(`[Gemini] model ${mainModel} succeeded on attempt ${attempt}`);
+        return { response, modelUsed: mainModel };
       } catch (err: any) {
         lastError = err;
+        (err as any).modelTried = mainModel;
         const status = err?.status || err?.code || err?.statusCode;
         const msg = err?.message || String(err);
-        console.error(`[Real Gemini Error] Main model "${mainModel}" attempt ${attempt}/${maxRetries} failed: Status ${status} - ${msg}`);
+        console.error(`[Real Gemini Error] Primary model "${mainModel}" attempt ${attempt}/${maxRetries} failed: Status ${status} - ${msg}`);
 
         // If NOT a 429/503 rate limit/busy error, do NOT retry; fail fast immediately
         if (!isRealBusyError(err)) {
           throw err;
         }
 
-        // If it is a persistent daily quota exhaustion for this model, fall back to Flash model immediately
+        // If persistent daily quota exhaustion for this model, fall back to Flash-Lite model immediately
         const lower = msg.toLowerCase();
         if (lower.includes('per day limit exceeded') || lower.includes('generaterequestsperday') || lower.includes('daily limit exceeded')) {
-          console.warn(`[Gemini Fast Fallback] Main model "${mainModel}" daily quota exhausted. Switching immediately to Flash model "${fallbackModel}"...`);
+          console.warn(`[Gemini Fast Fallback] Primary model "${mainModel}" daily quota exhausted. Switching immediately to fallback model "${fallbackModel}"...`);
           break;
         }
 
@@ -274,29 +279,42 @@ async function generateContentWithRetryAndFallback(params: {
       }
     }
 
-    // 2. If main model failed with 429/503 after all retries, fall back to a Flash model
-    console.warn(`[Gemini Fallback] Main model "${mainModel}" busy (429/503) after ${maxRetries} attempts. Falling back to Flash model "${fallbackModel}"...`);
-    try {
-      const response = await aiClient.models.generateContent({
-        model: fallbackModel,
-        contents: params.contents,
-        config: params.config,
-      });
-      return response;
-    } catch (fallbackErr: any) {
-      const status = fallbackErr?.status || fallbackErr?.code || fallbackErr?.statusCode;
-      const msg = fallbackErr?.message || String(fallbackErr);
-      console.error(`[Real Gemini Fallback Error] Fallback model "${fallbackModel}" failed: Status ${status} - ${msg}`);
-      throw fallbackErr;
+    // 2. If primary model failed with 429/503 after all retries, fall back to a second stable model family (Flash-Lite)
+    console.warn(`[Gemini Fallback] Primary model "${mainModel}" busy (429/503) after ${maxRetries} attempts. Falling back to second stable model "${fallbackModel}"...`);
+    for (let fbAttempt = 1; fbAttempt <= 2; fbAttempt++) {
+      console.log(`[Gemini] trying model ${fallbackModel} (attempt ${fbAttempt}/2)`);
+      try {
+        const response = await aiClient.models.generateContent({
+          model: fallbackModel,
+          contents: params.contents,
+          config: params.config,
+        });
+        console.log(`[Gemini] model ${fallbackModel} succeeded on attempt ${fbAttempt}`);
+        return { response, modelUsed: fallbackModel };
+      } catch (fallbackErr: any) {
+        lastError = fallbackErr;
+        (fallbackErr as any).modelTried = fallbackModel;
+        const status = fallbackErr?.status || fallbackErr?.code || fallbackErr?.statusCode;
+        const msg = fallbackErr?.message || String(fallbackErr);
+        console.error(`[Real Gemini Fallback Error] Fallback model "${fallbackModel}" attempt ${fbAttempt}/2 failed: Status ${status} - ${msg}`);
+
+        if (!isRealBusyError(fallbackErr) || fbAttempt >= 2) {
+          throw fallbackErr;
+        }
+        await wait(2000);
+      }
     }
+
+    throw lastError;
   });
 }
 
-// Helper for honest, friendly error messages with raw diagnostic passed to browser console
+// Helper for honest, friendly error messages with raw diagnostic and model name passed to browser console
 function handleGeminiError(res: Response, error: any, context: string) {
   const status = error?.status || error?.code || error?.statusCode || 500;
   const message = error?.message || String(error);
-  console.error(`[Real Underlying Gemini Error] Context: "${context}" | Status: ${status} | Message: ${message}`, error);
+  const modelTried = error?.modelTried || 'gemini-3.8-flash';
+  console.error(`[Real Underlying Gemini Error] Context: "${context}" | Model: "${modelTried}" | Status: ${status} | Message: ${message}`, error);
 
   const lowerMsg = message.toLowerCase();
 
@@ -320,6 +338,7 @@ function handleGeminiError(res: Response, error: any, context: string) {
       message: 'AI key not configured. Please configure your GEMINI_API_KEY in server secrets.',
       rawGeminiError: message,
       geminiStatus: status,
+      modelTried,
       isAiKeyMissing: true,
       context,
       status: 401,
@@ -338,6 +357,7 @@ function handleGeminiError(res: Response, error: any, context: string) {
       message,
       rawGeminiError: message,
       geminiStatus: status,
+      modelTried,
       isModelError: true,
       context,
       status: 400,
@@ -353,6 +373,7 @@ function handleGeminiError(res: Response, error: any, context: string) {
       message: 'Our AI is busy right now. Please try again in a few moments.',
       rawGeminiError: message,
       geminiStatus: status,
+      modelTried,
       isAiBusy: true,
       context,
       status: 503,
@@ -365,6 +386,7 @@ function handleGeminiError(res: Response, error: any, context: string) {
     message,
     rawGeminiError: message,
     geminiStatus: status,
+    modelTried,
     context,
     status: 500,
   });
@@ -419,7 +441,7 @@ Respond ONLY in valid JSON with this exact structure:
   ]
 }`;
 
-    const response = await generateContentWithRetryAndFallback({
+    const { response, modelUsed } = await generateContentWithRetryAndFallback({
       contents: {
         parts: [
           {
@@ -440,6 +462,7 @@ Respond ONLY in valid JSON with this exact structure:
     const parsed = parseAiJson(response.text || '{}', { roomDetected: 'General', features: [] });
     return res.json({
       ...parsed,
+      modelUsed,
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });
@@ -474,7 +497,7 @@ Respond ONLY in valid JSON:
   "improvementAreas": ["Slight backlighting from the window"]
 }`;
 
-    const response = await generateContentWithRetryAndFallback({
+    const { response, modelUsed } = await generateContentWithRetryAndFallback({
       contents: {
         parts: [
           {
@@ -500,6 +523,7 @@ Respond ONLY in valid JSON:
     });
     return res.json({
       ...parsed,
+      modelUsed,
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });
@@ -541,15 +565,18 @@ Extract the findings and provide them in clean JSON format:
 Only output the JSON.`;
 
     let response: any;
+    let modelUsed = 'gemini-3.8-flash';
     let sources: any[] = [];
 
     try {
-      response = await generateContentWithRetryAndFallback({
+      const result = await generateContentWithRetryAndFallback({
         contents: prompt,
         config: {
           tools: [{ googleSearch: {} }],
         },
       });
+      response = result.response;
+      modelUsed = result.modelUsed;
 
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       sources = chunks
@@ -561,12 +588,14 @@ Only output the JSON.`;
     } catch (searchErr) {
       if (isRealBusyError(searchErr)) {
         console.warn('[public-info] googleSearch tool busy, falling back to direct model knowledge...');
-        response = await generateContentWithRetryAndFallback({
+        const result = await generateContentWithRetryAndFallback({
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
           },
         });
+        response = result.response;
+        modelUsed = result.modelUsed;
       } else {
         throw searchErr;
       }
@@ -580,6 +609,7 @@ Only output the JSON.`;
     return res.json({
       propertyData,
       sources,
+      modelUsed,
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });
@@ -617,7 +647,7 @@ Respond in JSON:
   ]
 }`;
 
-    const response = await generateContentWithRetryAndFallback({
+    const { response, modelUsed } = await generateContentWithRetryAndFallback({
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -628,6 +658,7 @@ Respond in JSON:
     const parsed = parseAiJson(response.text || '{"suggestions":[]}', { suggestions: [] });
     return res.json({
       ...parsed,
+      modelUsed,
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });
@@ -677,7 +708,7 @@ Generate:
 
 Respond in JSON only.`;
 
-    const response = await generateContentWithRetryAndFallback({
+    const { response, modelUsed } = await generateContentWithRetryAndFallback({
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -688,6 +719,7 @@ Respond in JSON only.`;
     const parsed = parseAiJson(response.text || '{}', {});
     return res.json({
       ...parsed,
+      modelUsed,
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });
@@ -725,15 +757,18 @@ Format in JSON:
 Only output the JSON.`;
 
     let response: any;
+    let modelUsed = 'gemini-3.8-flash';
     let sources: any[] = [];
 
     try {
-      response = await generateContentWithRetryAndFallback({
+      const result = await generateContentWithRetryAndFallback({
         contents: prompt,
         config: {
           tools: [{ googleSearch: {} }],
         },
       });
+      response = result.response;
+      modelUsed = result.modelUsed;
 
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       sources = chunks.filter((c: any) => c.web?.uri).map((c: any) => ({
@@ -743,12 +778,14 @@ Only output the JSON.`;
     } catch (searchErr) {
       if (isRealBusyError(searchErr)) {
         console.warn('[site-rules] googleSearch tool busy, falling back to direct model knowledge...');
-        response = await generateContentWithRetryAndFallback({
+        const result = await generateContentWithRetryAndFallback({
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
           },
         });
+        response = result.response;
+        modelUsed = result.modelUsed;
       } else {
         throw searchErr;
       }
@@ -763,6 +800,7 @@ Only output the JSON.`;
       ruleData,
       sources,
       asOfDate: todayDate,
+      modelUsed,
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });
@@ -796,7 +834,7 @@ Structure as a friendly shot-by-shot smartphone filming guide in JSON:
   ]
 }`;
 
-    const response = await generateContentWithRetryAndFallback({
+    const { response, modelUsed } = await generateContentWithRetryAndFallback({
       contents: prompt,
       config: { responseMimeType: 'application/json' },
     });
@@ -805,6 +843,7 @@ Structure as a friendly shot-by-shot smartphone filming guide in JSON:
     const parsed = parseAiJson(response.text || '{}', { title: 'Smartphone Walkthrough Video Script', scenes: [] });
     return res.json({
       ...parsed,
+      modelUsed,
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });
@@ -833,7 +872,7 @@ Draft:
 
 Respond in JSON only.`;
 
-    const response = await generateContentWithRetryAndFallback({
+    const { response, modelUsed } = await generateContentWithRetryAndFallback({
       contents: prompt,
       config: { responseMimeType: 'application/json' },
     });
@@ -846,6 +885,7 @@ Respond in JSON only.`;
     });
     return res.json({
       ...parsed,
+      modelUsed,
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });

@@ -126,6 +126,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
             status: res.status,
             rawGeminiError: errData.rawGeminiError || errData.message,
             geminiStatus: errData.geminiStatus,
+            modelTried: errData.modelTried,
             isAiBusy: errData.isAiBusy,
             isAiKeyMissing: errData.isAiKeyMissing,
           });
@@ -135,6 +136,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
         }
 
         const data = await res.json();
+        console.log(`[Gemini Server Diagnostic] Photo ${i + 1}/${photosToScan.length} scanned successfully. Model answered: ${data.modelUsed || 'gemini-3.8-flash'}`);
         successCount++;
         if (data.features && Array.isArray(data.features)) {
           data.features.forEach((feat: any) => {
@@ -215,6 +217,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           status: res.status,
           rawGeminiError: errData.rawGeminiError || errData.message,
           geminiStatus: errData.geminiStatus,
+          modelTried: errData.modelTried,
           isAiBusy: errData.isAiBusy,
           isAiKeyMissing: errData.isAiKeyMissing,
         });
@@ -222,6 +225,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
       }
 
       const data = await res.json();
+      console.log(`[Gemini Server Diagnostic] Public info answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       setPublicData(data.propertyData || {});
       setPublicSources(data.sources || []);
     } catch (err: any) {
@@ -260,6 +264,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           status: res.status,
           rawGeminiError: errData.rawGeminiError || errData.message,
           geminiStatus: errData.geminiStatus,
+          modelTried: errData.modelTried,
           isAiBusy: errData.isAiBusy,
           isAiKeyMissing: errData.isAiKeyMissing,
         });
@@ -267,6 +272,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
       }
 
       const data = await res.json();
+      console.log(`[Gemini Server Diagnostic] Missing features answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       setGapQuestions(data.suggestions || []);
     } catch (err: any) {
       console.error(err);

@@ -170,9 +170,17 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
+        console.error('[Gemini Server Diagnostic for Inquiry Reply]:', {
+          status: res.status,
+          rawGeminiError: errJson.rawGeminiError || errJson.message,
+          geminiStatus: errJson.geminiStatus,
+          modelTried: errJson.modelTried,
+          isAiBusy: errJson.isAiBusy,
+        });
         throw new Error(errJson.error || errJson.message || `AI reply unavailable (${res.status})`);
       }
       const data = await res.json();
+      console.log(`[Gemini Server Diagnostic] Inquiry Reply answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       setGeneratedSms(data.sms || '');
       setGeneratedEmailSubject(data.emailSubject || '');
       setGeneratedEmailBody(data.emailBody || '');
