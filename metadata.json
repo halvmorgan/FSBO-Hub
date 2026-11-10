@@ -1,0 +1,6 @@
+{
+  "name": "FSBO Command Center",
+  "description": "All-in-one homeowner dashboard for selling your house without an agent, from prep and AI feature finding to pricing, listing, showings, and closing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

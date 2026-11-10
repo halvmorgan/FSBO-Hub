@@ -1,0 +1,171 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents an authenticated customer or admin in the multi-tenant SaaS application.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique Firebase Auth user ID." },
+        "email": { "type": "string", "description": "User email address." },
+        "displayName": { "type": "string", "description": "User display name." },
+        "photoURL": { "type": "string", "description": "Avatar image URL." },
+        "role": { "type": "string", "enum": ["user", "admin"], "description": "Role permission level." },
+        "plan": { "type": "string", "enum": ["trial", "per_listing", "pro"], "description": "Subscription or purchase tier." },
+        "planStatus": { "type": "string", "enum": ["active", "trialing", "past_due", "canceled", "expired"], "description": "Current billing status." },
+        "trialEndsAt": { "type": "string", "description": "ISO timestamp when the 7-day trial ends." },
+        "planExpiresAt": { "type": "string", "description": "ISO timestamp for plan expiration or renewal." },
+        "aiCreditsUsed": { "type": "number", "description": "Current month count of Gemini AI credits consumed." },
+        "stripeCustomerId": { "type": "string", "description": "Stripe customer identifier." },
+        "activePropertyId": { "type": "string", "description": "Currently active property ID." },
+        "createdAt": { "type": "string", "description": "Account registration timestamp." },
+        "updatedAt": { "type": "string", "description": "Last update timestamp." }
+      },
+      "required": ["uid", "email", "role", "plan", "planStatus"]
+    },
+    "Property": {
+      "title": "Property",
+      "description": "A residential property listing managed by a homeowner.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Property UUID." },
+        "ownerUid": { "type": "string", "description": "Owner user ID." },
+        "address": { "type": "string", "description": "Street address." },
+        "city": { "type": "string", "description": "City." },
+        "state": { "type": "string", "description": "State." },
+        "zip": { "type": "string", "description": "Zip code." },
+        "price": { "type": "number", "description": "Asking price in USD." },
+        "originalPrice": { "type": "number", "description": "Original list price for reduction tracking." },
+        "beds": { "type": "number", "description": "Bedrooms count." },
+        "bathsFull": { "type": "number", "description": "Full baths count." },
+        "bathsHalf": { "type": "number", "description": "Half baths count." },
+        "sqft": { "type": "number", "description": "Finished square footage." },
+        "lotSize": { "type": "string", "description": "Lot size description." },
+        "yearBuilt": { "type": "number", "description": "Year of construction." },
+        "taxes": { "type": "number", "description": "Annual taxes." },
+        "schoolDistrict": { "type": "string", "description": "Public school district." },
+        "publishedSlug": { "type": "string", "description": "URL slug for the hosted website (e.g. 4288-meadowview-dr)." },
+        "isPublished": { "type": "boolean", "description": "Whether the public website is live." },
+        "publishedAt": { "type": "string", "description": "Timestamp of publication." },
+        "photos": { "type": "array", "description": "List of photo objects with captions and URLs." },
+        "features": { "type": "array", "description": "List of feature chips." },
+        "upgrades": { "type": "array", "description": "List of improvements with years." },
+        "comps": { "type": "array", "description": "Comparable sales." },
+        "showings": { "type": "array", "description": "Private showings scheduled." },
+        "inquiries": { "type": "array", "description": "Buyer inquiries received." },
+        "documents": { "type": "array", "description": "Disclosures and documents." },
+        "offers": { "type": "array", "description": "Buyer purchase offers." },
+        "updatedAt": { "type": "string", "description": "Last updated timestamp." }
+      },
+      "required": ["id", "ownerUid", "address", "price"]
+    },
+    "PublicSite": {
+      "title": "PublicSite",
+      "description": "Publicly accessible property website page.",
+      "type": "object",
+      "properties": {
+        "slug": { "type": "string", "description": "Public URL slug." },
+        "ownerUid": { "type": "string", "description": "User ID of homeowner." },
+        "propertyId": { "type": "string", "description": "Underlying property ID." },
+        "address": { "type": "string", "description": "Address." },
+        "city": { "type": "string", "description": "City." },
+        "state": { "type": "string", "description": "State." },
+        "zip": { "type": "string", "description": "Zip." },
+        "price": { "type": "number", "description": "Price." },
+        "status": { "type": "string", "enum": ["active", "inactive", "suspended"], "description": "Public listing status." },
+        "theme": { "type": "string", "description": "Website theme." },
+        "updatedAt": { "type": "string", "description": "Last publication timestamp." }
+      },
+      "required": ["slug", "ownerUid", "propertyId", "address", "price", "status"]
+    },
+    "ShowingRequest": {
+      "title": "ShowingRequest",
+      "description": "Visitor tour request or message submitted on a public property website.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Request UUID." },
+        "slug": { "type": "string", "description": "Target property slug." },
+        "buyerName": { "type": "string", "description": "Visitor full name." },
+        "buyerPhone": { "type": "string", "description": "Visitor phone." },
+        "buyerEmail": { "type": "string", "description": "Visitor email." },
+        "preferredDate": { "type": "string", "description": "Preferred tour date/time." },
+        "hasPreApproval": { "type": "boolean", "description": "Pre-approval verification checkbox." },
+        "message": { "type": "string", "description": "Buyer message." },
+        "createdAt": { "type": "string", "description": "Submission timestamp." }
+      },
+      "required": ["id", "slug", "buyerName", "buyerEmail"]
+    },
+    "SaasConfig": {
+      "title": "SaasConfig",
+      "description": "Platform global plans, pricing, and system configuration.",
+      "type": "object",
+      "properties": {
+        "brandName": { "type": "string", "description": "Platform brand name." },
+        "plans": { "type": "object", "description": "Tier pricing, limits, and descriptions." },
+        "termsOfService": { "type": "string", "description": "Full Terms of Service text." },
+        "privacyPolicy": { "type": "string", "description": "Full Privacy Policy text." },
+        "supportEmail": { "type": "string", "description": "Support contact email." },
+        "updatedAt": { "type": "string", "description": "Config update timestamp." }
+      }
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notification for sellers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Notification ID." },
+        "uid": { "type": "string", "description": "User recipient UID." },
+        "title": { "type": "string", "description": "Notification title." },
+        "message": { "type": "string", "description": "Notification message." },
+        "type": { "type": "string", "description": "Category (showing, inquiry, billing, refresh, system)." },
+        "read": { "type": "boolean", "description": "Read status." },
+        "createdAt": { "type": "string", "description": "Created timestamp." }
+      },
+      "required": ["id", "uid", "title", "message"]
+    },
+    "SupportMessage": {
+      "title": "SupportMessage",
+      "description": "Support request submitted by user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Support ticket ID." },
+        "uid": { "type": "string", "description": "Submitter UID." },
+        "userEmail": { "type": "string", "description": "User email." },
+        "subject": { "type": "string", "description": "Message subject." },
+        "message": { "type": "string", "description": "Message details." },
+        "status": { "type": "string", "enum": ["open", "resolved"], "description": "Ticket status." },
+        "createdAt": { "type": "string", "description": "Submission timestamp." }
+      },
+      "required": ["id", "uid", "userEmail", "message"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "User" },
+      "description": "Customer and admin account profiles."
+    },
+    "/users/{userId}/properties/{propertyId}": {
+      "schema": { "$ref": "Property" },
+      "description": "All properties owned and managed by the user."
+    },
+    "/publicSites/{slug}": {
+      "schema": { "$ref": "PublicSite" },
+      "description": "Published, read-only property websites accessible to the public."
+    },
+    "/publicSites/{slug}/requests/{requestId}": {
+      "schema": { "$ref": "ShowingRequest" },
+      "description": "Tour requests and inquiries submitted by visitors on published sites."
+    },
+    "/saasConfig/{configId}": {
+      "schema": { "$ref": "SaasConfig" },
+      "description": "Global SaaS configuration, dynamic plan pricing, and terms."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "Notification" },
+      "description": "In-app notifications dispatched to users."
+    },
+    "/supportMessages/{messageId}": {
+      "schema": { "$ref": "SupportMessage" },
+      "description": "User support help inquiries."
+    }
+  }
+}

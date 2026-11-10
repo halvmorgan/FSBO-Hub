@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Admin authorization: runtime bootstrap or admin collection
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'halvmorgan@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role != 'admin' || isAdmin());
+      allow update: if (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isAdmin())) || isAdmin();
+      allow delete: if isOwner(userId) || isAdmin();
+
+      // User's Properties Subcollection
+      match /properties/{propertyId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Hosted Public Websites
+    match /publicSites/{slug} {
+      // Readable by anyone if active, or owner/admin
+      allow get: if true;
+      allow list: if true;
+      allow create: if isSignedIn() && (request.resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+
+      // Public Showing Requests & Inquiries
+      match /requests/{requestId} {
+        // Any visitor can submit a request (honeypot checked in payload)
+        allow create: if request.resource.data.buyerName is string &&
+                         request.resource.data.buyerName.size() <= 200 &&
+                         request.resource.data.buyerEmail is string;
+        // Only property owner or admin can read or manage requests
+        allow get, list, update, delete: if isSignedIn() && (
+          get(/databases/$(database)/documents/publicSites/$(slug)).data.ownerUid == request.auth.uid ||
+          isAdmin()
+        );
+      }
+    }
+
+    // Global SaaS Configuration (Plans, Prices, Terms)
+    match /saasConfig/{configId} {
+      allow get, list: if true;
+      allow write: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow get, list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && (request.resource.data.uid == request.auth.uid || isAdmin());
+      allow update, delete: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    // Support Messages
+    match /supportMessages/{messageId} {
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow get, list, update, delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    // Admins Collection
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
