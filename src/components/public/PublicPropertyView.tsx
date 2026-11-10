@@ -23,6 +23,7 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { PublicSiteDoc } from '../../types/saas';
+import { incrementFirestoreReadCount } from '../../lib/firestoreTracker';
 
 interface PublicPropertyViewProps {
   slug: string;
@@ -59,17 +60,36 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
     async function loadProperty() {
       if (!slug) return;
       const cacheKey = `fsbo_public_site_${slug}`;
+      const cacheTimeKey = `fsbo_public_site_ts_${slug}`;
+      const CACHE_TTL_MS = 15 * 60 * 1000; // 15-minute cache prevents quota exhaustion on public visits
 
       let cachedData: PublicSiteDoc | null = null;
+      let isFresh = false;
       try {
         const raw = localStorage.getItem(cacheKey);
-        if (raw) cachedData = JSON.parse(raw);
+        const timeStr = localStorage.getItem(cacheTimeKey);
+        if (raw) {
+          cachedData = JSON.parse(raw);
+          if (timeStr && Date.now() - parseInt(timeStr, 10) < CACHE_TTL_MS) {
+            isFresh = true;
+          }
+        }
       } catch (e) {}
 
+      // 1. If cached listing is fresh, render immediately with 0 Firestore reads!
+      if (isFresh && cachedData) {
+        setProperty(cachedData);
+        setCachedBanner(false);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fetch from Firestore only if cache is absent or expired (>15 mins)
       try {
         setLoading(true);
         setError(null);
         const ref = doc(db, 'publicSites', slug);
+        incrementFirestoreReadCount(`publicSites/${slug}`, 1);
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
@@ -92,6 +112,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
         setCachedBanner(false);
         try {
           localStorage.setItem(cacheKey, JSON.stringify(data));
+          localStorage.setItem(cacheTimeKey, Date.now().toString());
         } catch (e) {}
       } catch (err: any) {
         console.warn('Error loading public site (falling back to cache):', err);

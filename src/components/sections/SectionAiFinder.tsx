@@ -79,12 +79,21 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
     setIsScanningPhotos(true);
     setPhotoScanError(null);
 
-    try {
-      const detectedList: PhotoDetectedFeature[] = [];
+    const detectedList: PhotoDetectedFeature[] = [...photoFeatures];
+    const photosToScan = photos.slice(0, 4);
+    let successCount = 0;
+    let failedCount = 0;
+    let lastErrorDetail = '';
 
-      // Scan up to first 4 photos to provide comprehensive suggestions
-      const photosToScan = photos.slice(0, 4);
-      for (const p of photosToScan) {
+    for (let i = 0; i < photosToScan.length; i++) {
+      const p = photosToScan[i];
+
+      // Pause 2 seconds between photos (not all at once) to protect RPM quota
+      if (i > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
+      try {
         let base64ToSend = p.dataUrl;
         if (base64ToSend && (base64ToSend.startsWith('/') || base64ToSend.startsWith('http'))) {
           try {
@@ -112,10 +121,21 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
+          console.error('[Gemini Server Diagnostic for Photo Scan]:', {
+            photoId: p.id,
+            status: res.status,
+            rawGeminiError: errData.rawGeminiError || errData.message,
+            geminiStatus: errData.geminiStatus,
+            isAiBusy: errData.isAiBusy,
+            isAiKeyMissing: errData.isAiKeyMissing,
+          });
+          failedCount++;
+          lastErrorDetail = errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`);
+          continue; // Keep prior successes, do not wipe progress
         }
 
         const data = await res.json();
+        successCount++;
         if (data.features && Array.isArray(data.features)) {
           data.features.forEach((feat: any) => {
             // avoid duplicates
@@ -130,16 +150,26 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
               });
             }
           });
+          // Update photoFeatures state immediately so user sees good results in real time!
+          setPhotoFeatures([...detectedList]);
         }
+      } catch (err: any) {
+        console.error('[Photo Scan Network Error]:', err);
+        failedCount++;
+        lastErrorDetail = err.message || 'Network error';
       }
-
-      setPhotoFeatures(detectedList);
-    } catch (err: any) {
-      console.error(err);
-      setPhotoScanError(err.message || 'Failed to scan photos. Please check network connection.');
-    } finally {
-      setIsScanningPhotos(false);
     }
+
+    if (failedCount > 0) {
+      if (successCount > 0) {
+        setPhotoScanError(`Scanned ${successCount} of ${photosToScan.length} photos, try again for the rest.`);
+      } else {
+        setPhotoScanError(lastErrorDetail || 'AI is currently busy. Please wait a moment and try again.');
+      }
+    } else {
+      setPhotoScanError(null);
+    }
+    setIsScanningPhotos(false);
   };
 
   const handleAddFeature = (featName: string) => {
@@ -181,6 +211,13 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        console.error('[Gemini Server Diagnostic for Public Info]:', {
+          status: res.status,
+          rawGeminiError: errData.rawGeminiError || errData.message,
+          geminiStatus: errData.geminiStatus,
+          isAiBusy: errData.isAiBusy,
+          isAiKeyMissing: errData.isAiKeyMissing,
+        });
         throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
       }
 
@@ -219,6 +256,13 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        console.error('[Gemini Server Diagnostic for Missing Features]:', {
+          status: res.status,
+          rawGeminiError: errData.rawGeminiError || errData.message,
+          geminiStatus: errData.geminiStatus,
+          isAiBusy: errData.isAiBusy,
+          isAiKeyMissing: errData.isAiKeyMissing,
+        });
         throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
       }
 

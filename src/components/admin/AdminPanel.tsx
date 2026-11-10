@@ -27,6 +27,7 @@ import {
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserProfile, PlanType, PublicSiteDoc, SupportTicket } from '../../types/saas';
+import { incrementFirestoreReadCount } from '../../lib/firestoreTracker';
 
 export const AdminPanel: React.FC = () => {
   const { userProfile, saasConfig, updateSaasConfig, grantUserPlan } = useAuth();
@@ -50,16 +51,24 @@ export const AdminPanel: React.FC = () => {
   const [savingPlans, setSavingPlans] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Fetch Customers
+  // Single-fetch guards to prevent repeated Firestore reads on re-renders
+  const hasFetchedCustomersRef = React.useRef(false);
+  const hasFetchedSitesRef = React.useRef(false);
+  const hasFetchedSupportRef = React.useRef(false);
+
+  // Fetch Customers (only once on load)
   useEffect(() => {
     async function fetchCustomers() {
+      if (hasFetchedCustomersRef.current) return;
       try {
         setLoadingCustomers(true);
         const col = collection(db, 'users');
         const snap = await getDocs(col);
+        incrementFirestoreReadCount('users', snap.size);
         const list: UserProfile[] = [];
         snap.forEach((d) => list.push({ ...d.data(), uid: d.id } as UserProfile));
         setCustomers(list);
+        hasFetchedCustomersRef.current = true;
       } catch (err) {
         console.error('Failed to load customers:', err);
       } finally {
@@ -70,18 +79,21 @@ export const AdminPanel: React.FC = () => {
     if (userProfile?.role === 'admin') {
       fetchCustomers();
     }
-  }, [userProfile]);
+  }, [userProfile?.role]);
 
-  // Fetch Sites
+  // Fetch Sites (only once when tab is opened)
   useEffect(() => {
     async function fetchSites() {
+      if (hasFetchedSitesRef.current) return;
       try {
         setLoadingSites(true);
         const col = collection(db, 'publicSites');
         const snap = await getDocs(col);
+        incrementFirestoreReadCount('publicSites', snap.size);
         const list: PublicSiteDoc[] = [];
         snap.forEach((d) => list.push({ ...d.data(), slug: d.id } as PublicSiteDoc));
         setSites(list);
+        hasFetchedSitesRef.current = true;
       } catch (err) {
         console.error('Failed to load sites:', err);
       } finally {
@@ -92,18 +104,21 @@ export const AdminPanel: React.FC = () => {
     if (activeTab === 'sites' && userProfile?.role === 'admin') {
       fetchSites();
     }
-  }, [activeTab, userProfile]);
+  }, [activeTab, userProfile?.role]);
 
-  // Fetch Support Messages
+  // Fetch Support Messages (only once when tab is opened)
   useEffect(() => {
     async function fetchSupport() {
+      if (hasFetchedSupportRef.current) return;
       try {
         setLoadingSupport(true);
         const col = collection(db, 'supportMessages');
         const snap = await getDocs(col);
+        incrementFirestoreReadCount('supportMessages', snap.size);
         const list: SupportTicket[] = [];
         snap.forEach((d) => list.push({ ...d.data(), id: d.id } as SupportTicket));
         setSupportTickets(list);
+        hasFetchedSupportRef.current = true;
       } catch (err) {
         console.error('Failed to load support:', err);
       } finally {
@@ -114,7 +129,7 @@ export const AdminPanel: React.FC = () => {
     if (activeTab === 'support' && userProfile?.role === 'admin') {
       fetchSupport();
     }
-  }, [activeTab, userProfile]);
+  }, [activeTab, userProfile?.role]);
 
   // Handle plan updates in saasConfig
   const handleSavePlans = async () => {

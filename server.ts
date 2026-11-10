@@ -173,7 +173,47 @@ function isRealBusyError(err: any): boolean {
   );
 }
 
-// Automatic Retry up to 3 times for 429/503 with exponential backoff + fallback to Flash model
+// -------------------------------------------------------------
+// SERVER-SIDE CONCURRENCY QUEUE (Limits simultaneous calls)
+// -------------------------------------------------------------
+class GeminiConcurrencyQueue {
+  private active = 0;
+  private maxConcurrent = 2; // Strict limit: max 2 concurrent Gemini calls across all users
+  private queue: (() => void)[] = [];
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+
+  private acquire(): Promise<void> {
+    if (this.active < this.maxConcurrent) {
+      this.active++;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.queue.push(() => {
+        this.active++;
+        resolve();
+      });
+    });
+  }
+
+  private release() {
+    this.active--;
+    if (this.queue.length > 0) {
+      const next = this.queue.shift();
+      if (next) next();
+    }
+  }
+}
+const geminiQueue = new GeminiConcurrencyQueue();
+
+// Automatic Retry up to 3 times for 429/503 with exact 2s, 5s, 10s waits + fallback to Flash model
 async function generateContentWithRetryAndFallback(params: {
   contents: any;
   config?: any;
@@ -193,64 +233,68 @@ async function generateContentWithRetryAndFallback(params: {
   const mainModel = params.mainModel || 'gemini-3.8-flash';
   const fallbackModel = params.fallbackModel || 'gemini-3.1-flash-lite';
   const maxRetries = params.maxRetries ?? 3;
+  const retryDelays = [2000, 5000, 10000]; // Explicit waits: 2s, 5s, 10s
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  let lastError: any = null;
+  return await geminiQueue.run(async () => {
+    let lastError: any = null;
 
-  // 1. Try main model with up to 3 retries (only for 429/503)
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // 1. Try main model with up to 3 retries (only for 429/503)
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await aiClient.models.generateContent({
+          model: mainModel,
+          contents: params.contents,
+          config: params.config,
+        });
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const status = err?.status || err?.code || err?.statusCode;
+        const msg = err?.message || String(err);
+        console.error(`[Real Gemini Error] Main model "${mainModel}" attempt ${attempt}/${maxRetries} failed: Status ${status} - ${msg}`);
+
+        // If NOT a 429/503 rate limit/busy error, do NOT retry; fail fast immediately
+        if (!isRealBusyError(err)) {
+          throw err;
+        }
+
+        // If it is a persistent daily quota exhaustion for this model, fall back to Flash model immediately
+        const lower = msg.toLowerCase();
+        if (lower.includes('per day limit exceeded') || lower.includes('generaterequestsperday') || lower.includes('daily limit exceeded')) {
+          console.warn(`[Gemini Fast Fallback] Main model "${mainModel}" daily quota exhausted. Switching immediately to Flash model "${fallbackModel}"...`);
+          break;
+        }
+
+        if (attempt < maxRetries) {
+          const delay = retryDelays[attempt - 1] || 10000; // 2s, 5s, 10s
+          console.warn(`[Gemini Rate Limit] Attempt ${attempt} hit 429/503. Waiting ${delay / 1000}s before retry...`);
+          await wait(delay);
+        }
+      }
+    }
+
+    // 2. If main model failed with 429/503 after all retries, fall back to a Flash model
+    console.warn(`[Gemini Fallback] Main model "${mainModel}" busy (429/503) after ${maxRetries} attempts. Falling back to Flash model "${fallbackModel}"...`);
     try {
       const response = await aiClient.models.generateContent({
-        model: mainModel,
+        model: fallbackModel,
         contents: params.contents,
         config: params.config,
       });
       return response;
-    } catch (err: any) {
-      lastError = err;
-      const status = err?.status || err?.code || err?.statusCode;
-      const msg = err?.message || String(err);
-      console.error(`[Real Gemini Error] Main model "${mainModel}" attempt ${attempt}/${maxRetries} failed: Status ${status} - ${msg}`);
-
-      // If NOT a 429/503 rate limit/busy error, do NOT retry; fail fast immediately
-      if (!isRealBusyError(err)) {
-        throw err;
-      }
-
-      // If it is a persistent daily quota exhaustion for this model, fall back to Flash model immediately
-      const lower = msg.toLowerCase();
-      if (lower.includes('per day limit exceeded') || lower.includes('generaterequestsperday') || lower.includes('daily limit exceeded')) {
-        console.warn(`[Gemini Fast Fallback] Main model "${mainModel}" daily quota exhausted. Switching immediately to Flash model "${fallbackModel}"...`);
-        break;
-      }
-
-      if (attempt < maxRetries) {
-        const delay = 800 * Math.pow(2, attempt - 1); // 800ms, 1600ms
-        await wait(delay);
-      }
+    } catch (fallbackErr: any) {
+      const status = fallbackErr?.status || fallbackErr?.code || fallbackErr?.statusCode;
+      const msg = fallbackErr?.message || String(fallbackErr);
+      console.error(`[Real Gemini Fallback Error] Fallback model "${fallbackModel}" failed: Status ${status} - ${msg}`);
+      throw fallbackErr;
     }
-  }
-
-  // 2. If main model failed with 429/503 after all retries, fall back to a Flash model
-  console.warn(`[Gemini Fallback] Main model "${mainModel}" busy (429/503) after ${maxRetries} attempts. Falling back to Flash model "${fallbackModel}"...`);
-  try {
-    const response = await aiClient.models.generateContent({
-      model: fallbackModel,
-      contents: params.contents,
-      config: params.config,
-    });
-    return response;
-  } catch (fallbackErr: any) {
-    const status = fallbackErr?.status || fallbackErr?.code || fallbackErr?.statusCode;
-    const msg = fallbackErr?.message || String(fallbackErr);
-    console.error(`[Real Gemini Fallback Error] Fallback model "${fallbackModel}" failed: Status ${status} - ${msg}`);
-    throw fallbackErr;
-  }
+  });
 }
 
-// Helper for honest, friendly error messages
+// Helper for honest, friendly error messages with raw diagnostic passed to browser console
 function handleGeminiError(res: Response, error: any, context: string) {
-  const status = error?.status || error?.code || error?.statusCode;
+  const status = error?.status || error?.code || error?.statusCode || 500;
   const message = error?.message || String(error);
   console.error(`[Real Underlying Gemini Error] Context: "${context}" | Status: ${status} | Message: ${message}`, error);
 
@@ -274,6 +318,8 @@ function handleGeminiError(res: Response, error: any, context: string) {
     return res.status(401).json({
       error: 'AI key not configured',
       message: 'AI key not configured. Please configure your GEMINI_API_KEY in server secrets.',
+      rawGeminiError: message,
+      geminiStatus: status,
       isAiKeyMissing: true,
       context,
       status: 401,
@@ -290,6 +336,8 @@ function handleGeminiError(res: Response, error: any, context: string) {
     return res.status(400).json({
       error: 'Invalid AI model configured.',
       message,
+      rawGeminiError: message,
+      geminiStatus: status,
       isModelError: true,
       context,
       status: 400,
@@ -303,6 +351,8 @@ function handleGeminiError(res: Response, error: any, context: string) {
     return res.status(503).json({
       error: 'Our AI is busy right now. Please try again in a few moments.',
       message: 'Our AI is busy right now. Please try again in a few moments.',
+      rawGeminiError: message,
+      geminiStatus: status,
       isAiBusy: true,
       context,
       status: 503,
@@ -313,6 +363,8 @@ function handleGeminiError(res: Response, error: any, context: string) {
   return res.status(500).json({
     error: `AI request failed: ${message.slice(0, 160)}`,
     message,
+    rawGeminiError: message,
+    geminiStatus: status,
     context,
     status: 500,
   });
@@ -326,6 +378,7 @@ app.use('/api/gemini', (req: Request, res: Response, next: Function) => {
     return res.status(401).json({
       error: 'AI key not configured',
       message: 'AI key not configured. Please configure your GEMINI_API_KEY in server secrets.',
+      rawGeminiError: 'GEMINI_API_KEY is missing or empty in server environment variables.',
       isAiKeyMissing: true,
     });
   }

@@ -196,6 +196,12 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
+        console.error('[Gemini Server Diagnostic for Photo Coach]:', {
+          status: res.status,
+          rawGeminiError: errJson.rawGeminiError || errJson.message,
+          geminiStatus: errJson.geminiStatus,
+          isAiBusy: errJson.isAiBusy,
+        });
         throw new Error(errJson.error || errJson.message || `AI review unavailable (${res.status})`);
       }
       const data = await res.json();
@@ -234,7 +240,13 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || errJson.message || `AI script generation failed (${res.status})`);
+        console.error('[Gemini Server Diagnostic for Walkthrough Script]:', {
+          status: res.status,
+          rawGeminiError: errJson.rawGeminiError || errJson.message,
+          geminiStatus: errJson.geminiStatus,
+          isAiBusy: errJson.isAiBusy,
+        });
+        throw new Error(errJson.error || errJson.message || `Failed to generate script (${res.status})`);
       }
       const data = await res.json();
       setWalkthroughScript(data);

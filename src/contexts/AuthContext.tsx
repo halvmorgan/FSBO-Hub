@@ -24,6 +24,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { incrementFirestoreReadCount } from '../lib/firestoreTracker';
 import {
   UserProfile,
   SaasConfig,
@@ -69,7 +70,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const SAAS_CONFIG_CACHE_KEY = 'fsbo_saas_config_cached';
 const SAAS_CONFIG_TIMESTAMP_KEY = 'fsbo_saas_config_ts';
-const CACHE_TTL_MS = 60 * 60 * 1000; // 60 minutes
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours cache TTL to avoid Firestore quota burn
 
 function getInitialSaasConfig(): SaasConfig {
   try {
@@ -106,7 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // 2. Load Global SaaS Config from Firestore `saasConfig/global` once per session (cached up to 60 mins)
+  // 2. Load Global SaaS Config from Firestore `saasConfig/global` with 24-hour cache (0 reads on normal repeat visits)
   useEffect(() => {
     async function loadConfigOnce() {
       try {
@@ -122,6 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         const configRef = doc(db, 'saasConfig', 'global');
+        incrementFirestoreReadCount('saasConfig/global', 1);
         const snap = await getDoc(configRef);
         if (snap.exists()) {
           const merged = { ...DEFAULT_SAAS_CONFIG, ...snap.data() } as SaasConfig;
@@ -151,6 +153,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (fbUser) {
         const userRef = doc(db, 'users', fbUser.uid);
         try {
+          incrementFirestoreReadCount(`users/${fbUser.uid}`, 1);
           const userSnap = await getDoc(userRef);
 
           // Bootstrap admin rule: if email matches halvmorgan@gmail.com, auto-assign admin role!
@@ -223,37 +226,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, []);
 
-  // 4. Sync User's Properties in Real Time
+  // 4. Sync User's Properties in Real Time (Subscribes strictly ONCE per signed-in user)
+  const currentUid = currentUser?.uid;
   useEffect(() => {
-    if (!currentUser) return;
-    const propsCol = collection(db, 'users', currentUser.uid, 'properties');
+    if (!currentUid) return;
+    const propsCol = collection(db, 'users', currentUid, 'properties');
     const unsub = onSnapshot(
       propsCol,
       (snap) => {
+        incrementFirestoreReadCount(`users/${currentUid}/properties`, snap.docs.length);
         const list: PropertyProfile[] = [];
         snap.forEach((d) => {
           list.push({ ...DEFAULT_PROPERTY, ...d.data(), id: d.id } as PropertyProfile);
         });
         setUserProperties(list);
 
-        if (list.length > 0 && !activePropertyId) {
-          setActivePropertyIdState(list[0].id || null);
-        }
+        setActivePropertyIdState((prev) => {
+          if (prev && list.some((p) => p.id === prev)) return prev;
+          return list[0]?.id || null;
+        });
       },
       (err) => {
         console.warn('Properties sync error:', err);
       }
     );
     return () => unsub();
-  }, [currentUser, activePropertyId]);
+  }, [currentUid]);
 
-  // 5. Sync User's Notifications
+  // 5. Sync User's Notifications (Subscribes strictly ONCE per signed-in user)
   useEffect(() => {
-    if (!currentUser) return;
-    const notifsQuery = query(collection(db, 'notifications'), where('uid', '==', currentUser.uid));
+    if (!currentUid) return;
+    const notifsQuery = query(collection(db, 'notifications'), where('uid', '==', currentUid));
     const unsub = onSnapshot(
       notifsQuery,
       (snap) => {
+        incrementFirestoreReadCount('notifications', snap.docs.length);
         const notifList: InAppNotification[] = [];
         snap.forEach((d) => {
           notifList.push({ ...(d.data() as InAppNotification), id: d.id });
@@ -268,7 +275,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
     return () => unsub();
-  }, [currentUser]);
+  }, [currentUid]);
 
   // Active property object
   const activeProperty =

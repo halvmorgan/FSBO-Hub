@@ -54,6 +54,13 @@ export const SectionListing: React.FC<SectionListingProps> = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        console.error('[Gemini Server Diagnostic for Listing Copy]:', {
+          status: res.status,
+          rawGeminiError: errData.rawGeminiError || errData.message,
+          geminiStatus: errData.geminiStatus,
+          isAiBusy: errData.isAiBusy,
+          isAiKeyMissing: errData.isAiKeyMissing,
+        });
         throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `Generation failed (${res.status})`));
       }
 

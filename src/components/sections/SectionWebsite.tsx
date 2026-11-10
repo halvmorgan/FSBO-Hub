@@ -42,6 +42,7 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { PublicSiteDoc } from '../../types/saas';
+import { incrementFirestoreReadCount } from '../../lib/firestoreTracker';
 
 interface SectionWebsiteProps {
   property: PropertyProfile;
@@ -94,14 +95,26 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
 
   const hostedSiteUrl = `${window.location.origin}/p/${slug}`;
 
-  // Check if already published in Firestore
+  // Check if already published in Firestore (checks sessionStorage first to avoid burning reads on every tab switch)
   useEffect(() => {
     async function checkPublished() {
       if (!slug) return;
+      const sessionCacheKey = `fsbo_site_published_${slug}`;
+      const cached = sessionStorage.getItem(sessionCacheKey);
+      if (cached) {
+        try {
+          setPublishedDoc(JSON.parse(cached));
+          return;
+        } catch {}
+      }
+
       try {
+        incrementFirestoreReadCount(`publicSites/${slug}`, 1);
         const snap = await getDoc(doc(db, 'publicSites', slug));
         if (snap.exists()) {
-          setPublishedDoc(snap.data() as PublicSiteDoc);
+          const docData = snap.data() as PublicSiteDoc;
+          setPublishedDoc(docData);
+          sessionStorage.setItem(sessionCacheKey, JSON.stringify(docData));
         } else {
           setPublishedDoc(null);
         }
