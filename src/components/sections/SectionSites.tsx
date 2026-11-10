@@ -88,11 +88,18 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
   };
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [siteErrors, setSiteErrors] = useState<Record<string, string>>({});
 
   // Gemini + Google Search Grounding: Check Current Rules
   const handleCheckRules = async (site: ListingSiteItem) => {
     setCheckingSiteId(site.id);
     setErrorMessage(null);
+    setSiteErrors((prev) => {
+      const copy = { ...prev };
+      delete copy[site.id];
+      return copy;
+    });
+
     try {
       const res = await fetch('/api/gemini/site-rules', {
         method: 'POST',
@@ -102,7 +109,7 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `HTTP ${res.status}`);
+        throw new Error(errJson.error || errJson.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
       }
       const data = await res.json();
 
@@ -127,8 +134,10 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
       onUpdateSites(updated);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'Our AI is busy right now. Please try again in a few moments.');
-      setTimeout(() => setErrorMessage(null), 5000);
+      const msg = err.message || 'Rule check failed. Please try again.';
+      setErrorMessage(msg);
+      setSiteErrors((prev) => ({ ...prev, [site.id]: msg }));
+      setTimeout(() => setErrorMessage(null), 8000);
     } finally {
       setCheckingSiteId(null);
     }
@@ -323,24 +332,31 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
 
             {/* Bottom Actions */}
             <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                disabled={checkingSiteId === site.id}
-                onClick={() => handleCheckRules(site)}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-[#0F2A44] dark:hover:text-amber-300 transition-colors disabled:opacity-50"
-              >
-                {checkingSiteId === site.id ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Checking Rules...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5 text-[#F2B544]" />
-                    Check Current Rules
-                  </>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={checkingSiteId === site.id}
+                  onClick={() => handleCheckRules(site)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-[#0F2A44] dark:hover:text-amber-300 transition-colors disabled:opacity-50"
+                >
+                  {checkingSiteId === site.id ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Checking Rules...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-[#F2B544]" />
+                      Check Current Rules
+                    </>
+                  )}
+                </button>
+                {siteErrors[site.id] && (
+                  <span className="text-[10px] text-red-500 font-medium">
+                    {siteErrors[site.id]}
+                  </span>
                 )}
-              </button>
+              </div>
 
               <div className="flex items-center gap-2">
                 <button

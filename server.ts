@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import Stripe from 'stripe';
@@ -73,13 +74,79 @@ function checkAiCredits(cost = 1) {
 }
 
 // Helper to resolve Gemini API key from environment variables
-function getGeminiApiKey(): string | undefined {
-  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.API_KEY || undefined;
+function getGeminiApiKey(): string | null {
+  const envKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.API_KEY || '';
+  const trimmed = envKey.trim();
+  if (!trimmed || trimmed === 'MY_GEMINI_API_KEY' || trimmed === 'YOUR_GEMINI_API_KEY') {
+    return null;
+  }
+  return trimmed;
+}
+
+// Resilient helper to parse Gemini JSON outputs cleanly
+function parseAiJson(rawText: string, fallback: any = {}): any {
+  if (!rawText) return fallback;
+  try {
+    const cleaned = rawText
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    return JSON.parse(cleaned);
+  } catch {
+    const firstBrace = rawText.indexOf('{');
+    const lastBrace = rawText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(rawText.substring(firstBrace, lastBrace + 1));
+      } catch {}
+    }
+    const firstBracket = rawText.indexOf('[');
+    const lastBracket = rawText.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      try {
+        return JSON.parse(rawText.substring(firstBracket, lastBracket + 1));
+      } catch {}
+    }
+    return fallback;
+  }
+}
+
+// Resilient helper to resolve base64 or local asset image URLs to clean base64 data
+function resolveImageBase64(input: string, fallbackMime = 'image/jpeg'): { base64: string; mimeType: string } {
+  if (typeof input !== 'string') return { base64: '', mimeType: fallbackMime };
+  if (input.startsWith('data:')) {
+    const mimeMatch = input.match(/^data:([^;]+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : fallbackMime;
+    const base64 = input.replace(/^data:[^;]+;base64,/, '');
+    return { base64, mimeType };
+  }
+  // If it's a relative asset URL, e.g. /src/assets/images/... or src/assets/images/...
+  const cleanPath = input.replace(/^\//, '');
+  const localCandidates = [
+    path.resolve(__dirname, cleanPath),
+    path.resolve(__dirname, 'src', cleanPath),
+    path.resolve(process.cwd(), cleanPath),
+  ];
+  for (const candidate of localCandidates) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      const buffer = fs.readFileSync(candidate);
+      const ext = path.extname(candidate).toLowerCase();
+      const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+      return { base64: buffer.toString('base64'), mimeType: mime };
+    }
+  }
+  return { base64: input.replace(/^data:image\/[a-z]+;base64,/, ''), mimeType: fallbackMime };
 }
 
 // Instantiate GoogleGenAI client with resolved key
 function getAiClient(): GoogleGenAI {
   const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    const err: any = new Error('AI key not configured');
+    err.status = 401;
+    err.isAiKeyMissing = true;
+    throw err;
+  }
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
@@ -90,23 +157,23 @@ function getAiClient(): GoogleGenAI {
   });
 }
 
-// Check if error is 429 rate limit or 503 high demand / service overloaded
-function isRateLimitOrBusy(err: any): boolean {
+// Check if error is REAL 429 rate limit or 503 high demand / service overloaded
+function isRealBusyError(err: any): boolean {
   const status = err?.status || err?.code || err?.statusCode || 0;
   const msg = (err?.message || '').toLowerCase();
   return (
     status === 429 ||
     status === 503 ||
-    msg.includes('429') ||
-    msg.includes('503') ||
+    msg.includes('"code":429') ||
+    msg.includes('"code":503') ||
+    msg.includes('resource_exhausted') ||
     msg.includes('high demand') ||
     msg.includes('overloaded') ||
-    msg.includes('resource_exhausted') ||
-    msg.includes('temporarily unavailable')
+    msg.includes('503 service unavailable')
   );
 }
 
-// Automatic Retry up to 3 times for 429/503 with exponential backoff + fallback to lighter model
+// Automatic Retry up to 3 times for 429/503 with exponential backoff + fallback to Flash model
 async function generateContentWithRetryAndFallback(params: {
   contents: any;
   config?: any;
@@ -116,9 +183,9 @@ async function generateContentWithRetryAndFallback(params: {
 }): Promise<any> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    const err: any = new Error('GEMINI_API_KEY is not configured in server environment variables.');
+    const err: any = new Error('AI key not configured');
     err.status = 401;
-    err.isAuthError = true;
+    err.isAiKeyMissing = true;
     throw err;
   }
 
@@ -143,47 +210,42 @@ async function generateContentWithRetryAndFallback(params: {
       lastError = err;
       const status = err?.status || err?.code || err?.statusCode;
       const msg = err?.message || String(err);
-      console.error(`[Gemini Error] Main model "${mainModel}" attempt ${attempt}/${maxRetries} failed: Status ${status} - ${msg}`);
+      console.error(`[Real Gemini Error] Main model "${mainModel}" attempt ${attempt}/${maxRetries} failed: Status ${status} - ${msg}`);
 
-      // If this is an auth/key or model error, fail fast without wasting time retrying
-      if (!isRateLimitOrBusy(err)) {
+      // If NOT a 429/503 rate limit/busy error, do NOT retry; fail fast immediately
+      if (!isRealBusyError(err)) {
         throw err;
       }
 
+      // If it is a persistent daily quota exhaustion for this model, fall back to Flash model immediately
+      const lower = msg.toLowerCase();
+      if (lower.includes('per day limit exceeded') || lower.includes('generaterequestsperday') || lower.includes('daily limit exceeded')) {
+        console.warn(`[Gemini Fast Fallback] Main model "${mainModel}" daily quota exhausted. Switching immediately to Flash model "${fallbackModel}"...`);
+        break;
+      }
+
       if (attempt < maxRetries) {
-        const delay = 600 * Math.pow(2, attempt - 1); // 600ms, 1200ms
+        const delay = 800 * Math.pow(2, attempt - 1); // 800ms, 1600ms
         await wait(delay);
       }
     }
   }
 
-  // 2. Fallback to lighter model (gemini-3.1-flash-lite)
-  console.warn(`[Gemini Fallback] Main model ${mainModel} busy after ${maxRetries} attempts. Falling back to ${fallbackModel}...`);
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const response = await aiClient.models.generateContent({
-        model: fallbackModel,
-        contents: params.contents,
-        config: params.config,
-      });
-      return response;
-    } catch (err: any) {
-      lastError = err;
-      const status = err?.status || err?.code || err?.statusCode;
-      const msg = err?.message || String(err);
-      console.error(`[Gemini Fallback Error] Fallback model "${fallbackModel}" attempt ${attempt}/2 failed: Status ${status} - ${msg}`);
-
-      if (!isRateLimitOrBusy(err)) {
-        throw err;
-      }
-
-      if (attempt < 2) {
-        await wait(1000);
-      }
-    }
+  // 2. If main model failed with 429/503 after all retries, fall back to a Flash model
+  console.warn(`[Gemini Fallback] Main model "${mainModel}" busy (429/503) after ${maxRetries} attempts. Falling back to Flash model "${fallbackModel}"...`);
+  try {
+    const response = await aiClient.models.generateContent({
+      model: fallbackModel,
+      contents: params.contents,
+      config: params.config,
+    });
+    return response;
+  } catch (fallbackErr: any) {
+    const status = fallbackErr?.status || fallbackErr?.code || fallbackErr?.statusCode;
+    const msg = fallbackErr?.message || String(fallbackErr);
+    console.error(`[Real Gemini Fallback Error] Fallback model "${fallbackModel}" failed: Status ${status} - ${msg}`);
+    throw fallbackErr;
   }
-
-  throw lastError || new Error('Our AI is busy right now. Please try again in a few moments.');
 }
 
 // Helper for honest, friendly error messages
@@ -193,63 +255,82 @@ function handleGeminiError(res: Response, error: any, context: string) {
   console.error(`[Real Underlying Gemini Error] Context: "${context}" | Status: ${status} | Message: ${message}`, error);
 
   const lowerMsg = message.toLowerCase();
+
+  // 1. Missing or invalid API key
   const isAuthOrKey =
-    error?.isAuthError ||
+    error?.isAiKeyMissing ||
+    message === 'AI key not configured' ||
+    message.includes('AI key not configured') ||
     status === 401 ||
     status === 403 ||
-    lowerMsg.includes('api key') ||
-    lowerMsg.includes('authentication') ||
+    lowerMsg.includes('api_key_invalid') ||
+    lowerMsg.includes('api key not valid') ||
+    lowerMsg.includes('api key not configured') ||
+    lowerMsg.includes('api key should be set') ||
     lowerMsg.includes('permission_denied') ||
-    lowerMsg.includes('unauthenticated') ||
     lowerMsg.includes('insufficient authentication');
 
+  if (isAuthOrKey) {
+    return res.status(401).json({
+      error: 'AI key not configured',
+      message: 'AI key not configured. Please configure your GEMINI_API_KEY in server secrets.',
+      isAiKeyMissing: true,
+      context,
+      status: 401,
+    });
+  }
+
+  // 2. Invalid model error
   const isModelError =
     status === 404 ||
     (lowerMsg.includes('models/') && lowerMsg.includes('not found')) ||
     lowerMsg.includes('is not found for api version');
 
-  const isBusy =
-    status === 429 ||
-    status === 503 ||
-    lowerMsg.includes('429') ||
-    lowerMsg.includes('503') ||
-    lowerMsg.includes('high demand') ||
-    lowerMsg.includes('overloaded') ||
-    lowerMsg.includes('resource_exhausted');
-
-  if (isAuthOrKey) {
-    return res.status(401).json({
-      error: 'Gemini API authentication failed. Please verify that a valid GEMINI_API_KEY is configured in your server environment.',
-      details: message,
-      isAuthError: true,
-      context,
-    });
-  }
-
   if (isModelError) {
     return res.status(400).json({
-      error: 'The requested AI model is unavailable or invalid. Please check the model configuration.',
-      details: message,
+      error: 'Invalid AI model configured.',
+      message,
       isModelError: true,
       context,
+      status: 400,
     });
   }
 
-  if (isBusy) {
+  // 3. ONLY return 503 for REAL 429 or 503 busy/rate-limit errors
+  const isRealBusy = isRealBusyError(error);
+
+  if (isRealBusy) {
     return res.status(503).json({
       error: 'Our AI is busy right now. Please try again in a few moments.',
-      details: message,
+      message: 'Our AI is busy right now. Please try again in a few moments.',
       isAiBusy: true,
       context,
+      status: 503,
     });
   }
 
+  // 4. Any other non-busy error returns 500 (never 503 / "AI is busy")
   return res.status(500).json({
     error: `AI request failed: ${message.slice(0, 160)}`,
-    details: message,
+    message,
     context,
+    status: 500,
   });
 }
+
+// Global Key Guard for all /api/gemini routes
+app.use('/api/gemini', (req: Request, res: Response, next: Function) => {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    console.warn(`[Gemini API Guard] ${req.method} ${req.originalUrl}: AI key not configured on server.`);
+    return res.status(401).json({
+      error: 'AI key not configured',
+      message: 'AI key not configured. Please configure your GEMINI_API_KEY in server secrets.',
+      isAiKeyMissing: true,
+    });
+  }
+  next();
+});
 
 // -------------------------------------------------------------
 // SECURE SERVER-SIDE GEMINI AI ENDPOINTS (With Credit Deduction)
@@ -263,7 +344,10 @@ app.post('/api/gemini/photo-features', checkAiCredits(2), async (req: Request, r
       return res.status(400).json({ error: 'imageBase64 is required' });
     }
 
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+    const { base64: cleanBase64, mimeType: resolvedMime } = resolveImageBase64(imageBase64, mimeType);
+    if (!cleanBase64) {
+      return res.status(400).json({ error: 'Valid image base64 or photo asset could not be loaded.' });
+    }
 
     const prompt = `Analyze this real estate photo of a residential home${roomHint ? ` (room hint: ${roomHint})` : ''}.
 Identify specific, valuable selling features visible in this photo that a home buyer would care about.
@@ -288,7 +372,7 @@ Respond ONLY in valid JSON with this exact structure:
           {
             inlineData: {
               data: cleanBase64,
-              mimeType,
+              mimeType: resolvedMime,
             },
           },
           { text: prompt },
@@ -300,7 +384,7 @@ Respond ONLY in valid JSON with this exact structure:
     });
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
-    const parsed = JSON.parse(response.text || '{}');
+    const parsed = parseAiJson(response.text || '{}', { roomDetected: 'General', features: [] });
     return res.json({
       ...parsed,
       creditsUsed: creditRecord?.creditsUsed,
@@ -319,7 +403,10 @@ app.post('/api/gemini/photo-coach', checkAiCredits(2), async (req: Request, res:
       return res.status(400).json({ error: 'imageBase64 is required' });
     }
 
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+    const { base64: cleanBase64, mimeType: resolvedMime } = resolveImageBase64(imageBase64, mimeType);
+    if (!cleanBase64) {
+      return res.status(400).json({ error: 'Valid image base64 or photo asset could not be loaded.' });
+    }
 
     const prompt = `You are a professional real estate photography coach helping an everyday homeowner take winning photos to sell their home FSBO without an agent.
 Examine this photo${caption ? ` (caption: "${caption}")` : ''}.
@@ -340,7 +427,7 @@ Respond ONLY in valid JSON:
           {
             inlineData: {
               data: cleanBase64,
-              mimeType,
+              mimeType: resolvedMime,
             },
           },
           { text: prompt },
@@ -352,7 +439,12 @@ Respond ONLY in valid JSON:
     });
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
-    const parsed = JSON.parse(response.text || '{}');
+    const parsed = parseAiJson(response.text || '{}', {
+      quality: 'Good',
+      tip: 'Capture with camera held level at chest height in bright natural daylight.',
+      strengths: ['Clear shot'],
+      improvementAreas: [],
+    });
     return res.json({
       ...parsed,
       creditsUsed: creditRecord?.creditsUsed,
@@ -395,33 +487,40 @@ Extract the findings and provide them in clean JSON format:
 }
 Only output the JSON.`;
 
-    const response = await generateContentWithRetryAndFallback({
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
+    let response: any;
+    let sources: any[] = [];
 
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = chunks
-      .filter((c: any) => c.web?.uri)
-      .map((c: any) => ({
-        title: c.web.title || c.web.uri,
-        url: c.web.uri,
-      }));
+    try {
+      response = await generateContentWithRetryAndFallback({
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
 
-    let rawText = response.text || '';
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    let propertyData: any = {};
-    if (jsonMatch) {
-      try {
-        propertyData = JSON.parse(jsonMatch[0]);
-      } catch {
-        propertyData = { summary: rawText };
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      sources = chunks
+        .filter((c: any) => c.web?.uri)
+        .map((c: any) => ({
+          title: c.web.title || c.web.uri,
+          url: c.web.uri,
+        }));
+    } catch (searchErr) {
+      if (isRealBusyError(searchErr)) {
+        console.warn('[public-info] googleSearch tool busy, falling back to direct model knowledge...');
+        response = await generateContentWithRetryAndFallback({
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
+      } else {
+        throw searchErr;
       }
-    } else {
-      propertyData = { summary: rawText };
     }
+
+    const rawText = response.text || '';
+    const propertyData = parseAiJson(rawText, { summary: rawText });
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
 
@@ -473,7 +572,7 @@ Respond in JSON:
     });
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
-    const parsed = JSON.parse(response.text || '{"suggestions":[]}');
+    const parsed = parseAiJson(response.text || '{"suggestions":[]}', { suggestions: [] });
     return res.json({
       ...parsed,
       creditsUsed: creditRecord?.creditsUsed,
@@ -533,7 +632,7 @@ Respond in JSON only.`;
     });
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
-    const parsed = JSON.parse(response.text || '{}');
+    const parsed = parseAiJson(response.text || '{}', {});
     return res.json({
       ...parsed,
       creditsUsed: creditRecord?.creditsUsed,
@@ -572,27 +671,38 @@ Format in JSON:
 }
 Only output the JSON.`;
 
-    const response = await generateContentWithRetryAndFallback({
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
+    let response: any;
+    let sources: any[] = [];
 
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = chunks.filter((c: any) => c.web?.uri).map((c: any) => ({
-      title: c.web.title || c.web.uri,
-      url: c.web.uri,
-    }));
+    try {
+      response = await generateContentWithRetryAndFallback({
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
 
-    let rawText = response.text || '';
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    let ruleData: any = {};
-    if (jsonMatch) {
-      try { ruleData = JSON.parse(jsonMatch[0]); } catch { ruleData = { currentPolicySummary: rawText }; }
-    } else {
-      ruleData = { currentPolicySummary: rawText };
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      sources = chunks.filter((c: any) => c.web?.uri).map((c: any) => ({
+        title: c.web.title || c.web.uri,
+        url: c.web.uri,
+      }));
+    } catch (searchErr) {
+      if (isRealBusyError(searchErr)) {
+        console.warn('[site-rules] googleSearch tool busy, falling back to direct model knowledge...');
+        response = await generateContentWithRetryAndFallback({
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
+      } else {
+        throw searchErr;
+      }
     }
+
+    const rawText = response.text || '';
+    const ruleData = parseAiJson(rawText, { currentPolicySummary: rawText, siteName });
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
 
@@ -639,7 +749,7 @@ Structure as a friendly shot-by-shot smartphone filming guide in JSON:
     });
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
-    const parsed = JSON.parse(response.text || '{}');
+    const parsed = parseAiJson(response.text || '{}', { title: 'Smartphone Walkthrough Video Script', scenes: [] });
     return res.json({
       ...parsed,
       creditsUsed: creditRecord?.creditsUsed,
@@ -676,7 +786,11 @@ Respond in JSON only.`;
     });
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
-    const parsed = JSON.parse(response.text || '{}');
+    const parsed = parseAiJson(response.text || '{}', {
+      sms: 'Thanks for reaching out! When would you like to view the home?',
+      emailSubject: `Regarding ${property?.address || 'the home'}`,
+      emailBody: `Hi ${buyerName},\n\nThank you for your interest!`,
+    });
     return res.json({
       ...parsed,
       creditsUsed: creditRecord?.creditsUsed,

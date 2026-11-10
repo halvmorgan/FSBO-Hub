@@ -84,20 +84,35 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
 
       // Scan up to first 4 photos to provide comprehensive suggestions
       const photosToScan = photos.slice(0, 4);
-
       for (const p of photosToScan) {
+        let base64ToSend = p.dataUrl;
+        if (base64ToSend && (base64ToSend.startsWith('/') || base64ToSend.startsWith('http'))) {
+          try {
+            const blobRes = await fetch(base64ToSend);
+            const blob = await blobRes.blob();
+            base64ToSend = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.warn('Could not convert photo to base64 in client, sending path:', e);
+          }
+        }
+
         const res = await fetch('/api/gemini/photo-features', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            imageBase64: p.dataUrl,
+            imageBase64: base64ToSend,
             roomHint: p.caption || p.roomCategory,
           }),
         });
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `HTTP ${res.status}`);
+          throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
         }
 
         const data = await res.json();
@@ -166,7 +181,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `HTTP ${res.status}`);
+        throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
       }
 
       const data = await res.json();
@@ -204,7 +219,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `HTTP ${res.status}`);
+        throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
       }
 
       const data = await res.json();
@@ -316,24 +331,31 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={isScanningPhotos}
-            onClick={handleScanPhotos}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] dark:hover:bg-[#fa5644] transition-all disabled:opacity-50 shadow-md shrink-0"
-          >
-            {isScanningPhotos ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Scanning Photos...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 text-[#F2B544]" />
-                Scan My Photos
-              </>
+          <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0">
+            <button
+              type="button"
+              disabled={isScanningPhotos}
+              onClick={handleScanPhotos}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] dark:hover:bg-[#fa5644] transition-all disabled:opacity-50 shadow-md shrink-0"
+            >
+              {isScanningPhotos ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Scanning Photos...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-[#F2B544]" />
+                  Scan My Photos
+                </>
+              )}
+            </button>
+            {photoScanError && (
+              <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
+                {photoScanError}
+              </span>
             )}
-          </button>
+          </div>
         </div>
 
         {photoScanError && (
@@ -440,24 +462,31 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={isCheckingPublic}
-            onClick={handleCheckPublicInfo}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-blue-600 dark:hover:bg-blue-700 transition-all disabled:opacity-50 shadow-md shrink-0"
-          >
-            {isCheckingPublic ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Searching Assessor Records...
-              </>
-            ) : (
-              <>
-                <Search className="w-4 h-4" />
-                Check Public Info
-              </>
+          <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0">
+            <button
+              type="button"
+              disabled={isCheckingPublic}
+              onClick={handleCheckPublicInfo}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-blue-600 dark:hover:bg-blue-700 transition-all disabled:opacity-50 shadow-md shrink-0"
+            >
+              {isCheckingPublic ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Searching Assessor Records...
+                </>
+              ) : (
+                <>
+                  <Search className="w-4 h-4" />
+                  Check Public Info
+                </>
+              )}
+            </button>
+            {publicError && (
+              <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
+                {publicError}
+              </span>
             )}
-          </button>
+          </div>
         </div>
 
         {publicError && (
@@ -610,24 +639,31 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={isCheckingGaps}
-            onClick={handleCheckMissingFeatures}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-purple-600 dark:hover:bg-purple-700 transition-all disabled:opacity-50 shadow-md shrink-0"
-          >
-            {isCheckingGaps ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Analyzing Buyer Gaps...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 text-[#F2B544]" />
-                What Am I Missing?
-              </>
+          <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0">
+            <button
+              type="button"
+              disabled={isCheckingGaps}
+              onClick={handleCheckMissingFeatures}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-purple-600 dark:hover:bg-purple-700 transition-all disabled:opacity-50 shadow-md shrink-0"
+            >
+              {isCheckingGaps ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Analyzing Buyer Gaps...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-[#F2B544]" />
+                  What Am I Missing?
+                </>
+              )}
+            </button>
+            {gapError && (
+              <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
+                {gapError}
+              </span>
             )}
-          </button>
+          </div>
         </div>
 
         {gapError && (

@@ -54,7 +54,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || errData.message || (res.status === 503 ? 'Our AI is busy right now. Please try again shortly.' : `Generation failed (${res.status})`));
+        throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `Generation failed (${res.status})`));
       }
 
       const data = await res.json();

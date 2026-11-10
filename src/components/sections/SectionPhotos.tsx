@@ -169,11 +169,27 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
       return copy;
     });
     try {
+      let base64ToSend = photo.dataUrl;
+      if (base64ToSend && (base64ToSend.startsWith('/') || base64ToSend.startsWith('http'))) {
+        try {
+          const blobRes = await fetch(base64ToSend);
+          const blob = await blobRes.blob();
+          base64ToSend = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } catch (e) {
+          console.warn('Could not convert photo to base64 in client, sending path:', e);
+        }
+      }
+
       const res = await fetch('/api/gemini/photo-coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: photo.dataUrl,
+          imageBase64: base64ToSend,
           caption: photo.caption,
         }),
       });
