@@ -19,6 +19,7 @@ import {
   HelpCircle,
   Calendar,
   Globe,
+  RefreshCw,
 } from 'lucide-react';
 
 interface SectionSitesProps {
@@ -116,7 +117,8 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
           modelTried: errJson.modelTried,
           isAiBusy: errJson.isAiBusy,
         });
-        throw new Error(errJson.error || errJson.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
+        const isBusy = errJson.isAiBusy || res.status === 503;
+        throw new Error(isBusy ? 'AI is busy, please try again in a few minutes' : (errJson.error || errJson.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`)));
       }
       const data = await res.json();
       console.log(`[Gemini Server Diagnostic] Site Rules answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
@@ -360,9 +362,19 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
                   )}
                 </button>
                 {siteErrors[site.id] && (
-                  <span className="text-[10px] text-red-500 font-medium">
-                    {siteErrors[site.id]}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-red-500 font-medium">
+                      {siteErrors[site.id]}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCheckRules(site)}
+                      className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#FF6B5A] hover:underline shrink-0"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5" />
+                      Try Again
+                    </button>
+                  </div>
                 )}
               </div>
 

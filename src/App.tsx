@@ -423,15 +423,13 @@ function AppContent() {
     }
   }, [activeProperty]);
 
-  // Handle plan upgrade query parameters (after Stripe checkout)
+  // Clean up Stripe checkout callback parameters from the address bar (no client-side plan grants)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const upgradedPlan = params.get('upgraded');
-    if (upgradedPlan && currentUser) {
-      grantUserPlan(currentUser.uid, upgradedPlan as PlanType, 'active');
+    if (params.has('payment_success') || params.has('session_id') || params.has('canceled') || params.has('upgraded')) {
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [currentUser, grantUserPlan]);
+  }, []);
 
   // Load photos from IndexedDB on startup
   useEffect(() => {
@@ -620,23 +618,28 @@ function AppContent() {
     }
 
     try {
+      const idToken = await currentUser.getIdToken();
       const res = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
           planId,
-          userEmail: currentUser.email,
-          userId: currentUser.uid,
           propertyId: (property as any).id || '',
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Checkout initiation failed');
+      }
       if (data.url) {
         window.location.href = data.url;
       }
     } catch (err: any) {
       console.error('Checkout error:', err);
-      alert('Could not start checkout: ' + err.message);
+      alert(err.message || 'Could not start checkout.');
     }
   };
 

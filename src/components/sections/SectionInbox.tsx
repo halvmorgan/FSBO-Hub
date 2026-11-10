@@ -16,6 +16,7 @@ import {
   FileCode,
   Loader2,
   Calendar,
+  RefreshCw,
 } from 'lucide-react';
 
 interface SectionInboxProps {
@@ -177,7 +178,8 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
           modelTried: errJson.modelTried,
           isAiBusy: errJson.isAiBusy,
         });
-        throw new Error(errJson.error || errJson.message || `AI reply unavailable (${res.status})`);
+        const isBusy = errJson.isAiBusy || res.status === 503;
+        throw new Error(isBusy ? 'AI is busy, please try again in a few minutes' : (errJson.error || errJson.message || `AI reply unavailable (${res.status})`));
       }
       const data = await res.json();
       console.log(`[Gemini Server Diagnostic] Inquiry Reply answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
@@ -186,7 +188,7 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
       setGeneratedEmailBody(data.emailBody || '');
     } catch (err: any) {
       console.error(err);
-      setReplyError(err.message || 'AI reply unavailable. Using template fallback.');
+      setReplyError(err.message || 'AI is busy, please try again in a few minutes');
       // Fallback
       setGeneratedSms(
         `Hi ${selectedInquiry.name}, thank you for your interest in ${property.address}! When is a good time for a quick 10-minute tour? - ${settings.sellerName}`
@@ -394,8 +396,16 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
                   </div>
 
                   {replyError && (
-                    <div className="text-[11px] text-amber-700 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200 dark:border-amber-900/40">
-                      {replyError}
+                    <div className="text-[11px] text-amber-700 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/40 flex items-center justify-between gap-2">
+                      <span>{replyError}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateReply(selectedTemplate)}
+                        className="inline-flex items-center gap-1 font-bold text-xs text-[#FF6B5A] hover:underline shrink-0"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Try Again
+                      </button>
                     </div>
                   )}
 

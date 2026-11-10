@@ -62,7 +62,9 @@ export const SectionListing: React.FC<SectionListingProps> = ({
           isAiBusy: errData.isAiBusy,
           isAiKeyMissing: errData.isAiKeyMissing,
         });
-        throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `Generation failed (${res.status})`));
+        const isBusy = errData.isAiBusy || res.status === 503;
+        const msg = isBusy ? 'AI is busy, please try again in a few minutes' : (errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `Generation failed (${res.status})`));
+        throw new Error(msg);
       }
 
       const data = await res.json();
@@ -88,7 +90,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
       onUpdateListingCopy(updatedCopy);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'Failed to generate listing copy. Please retry.');
+      setErrorMsg(err.message || 'AI is busy, please try again in a few minutes');
     } finally {
       setIsGenerating(false);
     }
@@ -135,9 +137,19 @@ export const SectionListing: React.FC<SectionListingProps> = ({
               )}
             </button>
             {errorMsg && (
-              <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
-                {errorMsg}
-              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
+                  {errorMsg}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleGenerateCopy}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-sm shrink-0"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Try Again
+                </button>
+              </div>
             )}
           </div>
         </div>

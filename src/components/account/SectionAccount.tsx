@@ -46,6 +46,10 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing })
     return new URLSearchParams(window.location.search).get('portal_notice') === 'true';
   });
 
+  const [showPaymentSuccessNotice, setShowPaymentSuccessNotice] = useState(() => {
+    return new URLSearchParams(window.location.search).get('payment_success') === 'true';
+  });
+
   const planType: PlanType = userProfile?.plan || 'trial';
   const planConfig = saasConfig.plans[planType] || saasConfig.plans.trial;
   const creditsUsed = userProfile?.aiCreditsUsed || 0;
@@ -61,22 +65,29 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing })
 
     try {
       setPortalLoading(true);
+      const idToken = await currentUser.getIdToken();
       const res = await fetch('/api/stripe/create-portal-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
           customerId: userProfile?.stripeCustomerId,
-          returnUrl: window.location.href,
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to open customer portal');
+      }
       if (data.url) {
         window.location.href = data.url;
       } else {
         if (onOpenPricing) onOpenPricing();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Portal error:', err);
+      setDemoNotice(err.message || 'Could not open billing portal.');
       if (onOpenPricing) onOpenPricing();
     } finally {
       setPortalLoading(false);
@@ -176,6 +187,27 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing })
           Manage your seller profile, billing tier, AI credits, and data exports.
         </p>
       </div>
+
+      {showPaymentSuccessNotice && (
+        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Payment received! Your upgraded plan and AI credits have been activated.</span>
+          </div>
+          <button
+            onClick={() => {
+              setShowPaymentSuccessNotice(false);
+              const url = new URL(window.location.href);
+              url.searchParams.delete('payment_success');
+              url.searchParams.delete('session_id');
+              window.history.replaceState({}, '', url.pathname + (url.search || ''));
+            }}
+            className="text-emerald-600 dark:text-emerald-400 hover:underline font-bold text-xs shrink-0 ml-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {showPortalNotice && (
         <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 text-xs flex items-center justify-between">

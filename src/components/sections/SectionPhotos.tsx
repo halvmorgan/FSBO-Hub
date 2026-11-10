@@ -23,6 +23,7 @@ import {
   CheckSquare,
   Square,
   HelpCircle,
+  RefreshCw,
 } from 'lucide-react';
 
 interface SectionPhotosProps {
@@ -203,7 +204,8 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
           modelTried: errJson.modelTried,
           isAiBusy: errJson.isAiBusy,
         });
-        throw new Error(errJson.error || errJson.message || `AI review unavailable (${res.status})`);
+        const isBusy = errJson.isAiBusy || res.status === 503;
+        throw new Error(isBusy ? 'AI is busy, please try again in a few minutes' : (errJson.error || errJson.message || `AI review unavailable (${res.status})`));
       }
       const data = await res.json();
       console.log(`[Gemini Server Diagnostic] Photo Coach answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
@@ -223,7 +225,7 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
       console.error(err);
       setCoachErrors((prev) => ({
         ...prev,
-        [photo.id]: err.message || 'AI coach review failed. Please try again.',
+        [photo.id]: err.message || 'AI is busy, please try again in a few minutes',
       }));
     } finally {
       setAnalyzingPhotoId(null);
@@ -249,14 +251,15 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
           modelTried: errJson.modelTried,
           isAiBusy: errJson.isAiBusy,
         });
-        throw new Error(errJson.error || errJson.message || `Failed to generate script (${res.status})`);
+        const isBusy = errJson.isAiBusy || res.status === 503;
+        throw new Error(isBusy ? 'AI is busy, please try again in a few minutes' : (errJson.error || errJson.message || `Failed to generate script (${res.status})`));
       }
       const data = await res.json();
       console.log(`[Gemini Server Diagnostic] Walkthrough Script answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       setWalkthroughScript(data);
     } catch (err: any) {
       console.error(err);
-      setScriptError(err.message || 'Script generation failed. Please try again.');
+      setScriptError(err.message || 'AI is busy, please try again in a few minutes');
     } finally {
       setIsGeneratingScript(false);
     }
@@ -428,8 +431,16 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
                   </div>
 
                   {coachErrors[photo.id] && (
-                    <div className="text-[11px] text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-950/40 p-2 rounded-lg border border-red-200 dark:border-red-900/50">
-                      {coachErrors[photo.id]}
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-950/40 p-2 rounded-lg border border-red-200 dark:border-red-900/50">
+                      <span>{coachErrors[photo.id]}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRunPhotoCoach(photo)}
+                        className="inline-flex items-center gap-1 font-bold text-xs text-[#FF6B5A] hover:underline shrink-0"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Try Again
+                      </button>
                     </div>
                   )}
                 </div>
@@ -557,8 +568,16 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
         </div>
 
         {scriptError && (
-          <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-xs text-red-600 dark:text-red-400 font-medium">
-            {scriptError}
+          <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-xs text-red-600 dark:text-red-400 font-medium flex items-center justify-between gap-2">
+            <span>{scriptError}</span>
+            <button
+              type="button"
+              onClick={handleGenerateScript}
+              className="inline-flex items-center gap-1 font-bold text-xs text-[#FF6B5A] hover:underline shrink-0"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Try Again
+            </button>
           </div>
         )}
 

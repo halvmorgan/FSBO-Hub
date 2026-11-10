@@ -13,6 +13,7 @@ import {
   HelpCircle,
   ArrowRight,
   ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 
 interface SectionAiFinderProps {
@@ -166,7 +167,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
       if (successCount > 0) {
         setPhotoScanError(`Scanned ${successCount} of ${photosToScan.length} photos, try again for the rest.`);
       } else {
-        setPhotoScanError(lastErrorDetail || 'AI is currently busy. Please wait a moment and try again.');
+        setPhotoScanError('AI is busy, please try again in a few minutes');
       }
     } else {
       setPhotoScanError(null);
@@ -221,7 +222,9 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           isAiBusy: errData.isAiBusy,
           isAiKeyMissing: errData.isAiKeyMissing,
         });
-        throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
+        const isBusy = errData.isAiBusy || res.status === 503;
+        const msg = isBusy ? 'AI is busy, please try again in a few minutes' : (errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
+        throw new Error(msg);
       }
 
       const data = await res.json();
@@ -230,7 +233,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
       setPublicSources(data.sources || []);
     } catch (err: any) {
       console.error(err);
-      setPublicError(err.message || 'Failed to query public property records.');
+      setPublicError(err.message || 'AI is busy, please try again in a few minutes');
     } finally {
       setIsCheckingPublic(false);
     }
@@ -268,7 +271,9 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           isAiBusy: errData.isAiBusy,
           isAiKeyMissing: errData.isAiKeyMissing,
         });
-        throw new Error(errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
+        const isBusy = errData.isAiBusy || res.status === 503;
+        const msg = isBusy ? 'AI is busy, please try again in a few minutes' : (errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
+        throw new Error(msg);
       }
 
       const data = await res.json();
@@ -276,7 +281,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
       setGapQuestions(data.suggestions || []);
     } catch (err: any) {
       console.error(err);
-      setGapError(err.message || 'Failed to analyze feature gaps.');
+      setGapError(err.message || 'AI is busy, please try again in a few minutes');
     } finally {
       setIsCheckingGaps(false);
     }
@@ -401,17 +406,37 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
               )}
             </button>
             {photoScanError && (
-              <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
-                {photoScanError}
-              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
+                  {photoScanError}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleScanPhotos}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-sm shrink-0"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Try Again
+                </button>
+              </div>
             )}
           </div>
         </div>
 
         {photoScanError && (
-          <div className="p-3 mb-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40 text-xs text-red-600 dark:text-red-300 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{photoScanError}</span>
+          <div className="p-3 mb-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40 text-xs text-red-600 dark:text-red-300 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{photoScanError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleScanPhotos}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shrink-0"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Try Again
+            </button>
           </div>
         )}
 
@@ -532,17 +557,37 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
               )}
             </button>
             {publicError && (
-              <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
-                {publicError}
-              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
+                  {publicError}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCheckPublicInfo}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-sm shrink-0"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Try Again
+                </button>
+              </div>
             )}
           </div>
         </div>
 
         {publicError && (
-          <div className="p-3 mb-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40 text-xs text-red-600 dark:text-red-300 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{publicError}</span>
+          <div className="p-3 mb-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40 text-xs text-red-600 dark:text-red-300 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{publicError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCheckPublicInfo}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs text-white bg-blue-600 hover:bg-blue-700 transition-all shrink-0"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Try Again
+            </button>
           </div>
         )}
 
@@ -709,17 +754,37 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
               )}
             </button>
             {gapError && (
-              <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
-                {gapError}
-              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
+                  {gapError}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCheckMissingFeatures}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-purple-600 hover:bg-purple-700 transition-all shadow-sm shrink-0"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Try Again
+                </button>
+              </div>
             )}
           </div>
         </div>
 
         {gapError && (
-          <div className="p-3 mb-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40 text-xs text-red-600 dark:text-red-300 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{gapError}</span>
+          <div className="p-3 mb-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40 text-xs text-red-600 dark:text-red-300 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{gapError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCheckMissingFeatures}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs text-white bg-purple-600 hover:bg-purple-700 transition-all shrink-0"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Try Again
+            </button>
           </div>
         )}
 
