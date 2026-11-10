@@ -479,6 +479,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 );
               })}
+
+              {onOpenHelp && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onOpenHelp();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-[#14385A] hover:text-white transition-all mt-1"
+                >
+                  <HelpCircle className="w-4 h-4 text-[#F2B544]" />
+                  <span>Help & Support</span>
+                </button>
+              )}
             </nav>
 
             <div className="pt-3 border-t border-[#1E4268]/60 flex items-center justify-between">

@@ -35,11 +35,16 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing })
   const [exporting, setExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [demoNotice, setDemoNotice] = useState<string | null>(null);
   const [verificationSent, setVerificationSent] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [showPortalNotice, setShowPortalNotice] = useState(() => {
+    return new URLSearchParams(window.location.search).get('portal_notice') === 'true';
+  });
 
   const planType: PlanType = userProfile?.plan || 'trial';
   const planConfig = saasConfig.plans[planType] || saasConfig.plans.trial;
@@ -49,6 +54,11 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing })
 
   // Handle Stripe Customer Portal
   const handleManageBilling = async () => {
+    if (!currentUser) {
+      setDemoNotice('Billing is available after you create an account.');
+      return;
+    }
+
     try {
       setPortalLoading(true);
       const res = await fetch('/api/stripe/create-portal-session', {
@@ -166,6 +176,38 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing })
           Manage your seller profile, billing tier, AI credits, and data exports.
         </p>
       </div>
+
+      {showPortalNotice && (
+        <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>Customer billing portal session complete. Manage your plan and payment details below.</span>
+          </div>
+          <button
+            onClick={() => {
+              setShowPortalNotice(false);
+              const url = new URL(window.location.href);
+              url.searchParams.delete('portal_notice');
+              window.history.replaceState({}, '', url.pathname + (url.search || ''));
+            }}
+            className="text-blue-600 dark:text-blue-400 hover:underline font-bold text-xs shrink-0 ml-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {demoNotice && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between">
+          <span>{demoNotice}</span>
+          <button
+            onClick={() => setDemoNotice(null)}
+            className="font-bold underline ml-2 text-amber-800 hover:text-amber-950"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Grid: 2 Columns */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

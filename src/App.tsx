@@ -59,6 +59,7 @@ import { SectionPromote } from './components/sections/SectionPromote';
 import { SectionRefresh } from './components/sections/SectionRefresh';
 import { SectionClosing } from './components/sections/SectionClosing';
 import { SectionSettings } from './components/sections/SectionSettings';
+import { SectionHelp } from './components/sections/SectionHelp';
 
 import { CloudUpload, X, HelpCircle } from 'lucide-react';
 import { PlanType } from './types/saas';
@@ -138,6 +139,9 @@ function AppContent() {
   // Modals
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('signup');
+  const [pendingPlan, setPendingPlan] = useState<PlanType | null>(() => {
+    return (localStorage.getItem('fsbo_pending_plan') as PlanType) || null;
+  });
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
@@ -392,6 +396,9 @@ function AppContent() {
       } else if (path === '/admin') {
         setActiveTab('admin');
         setCurrentView('app');
+      } else if (path === '/account') {
+        setActiveTab('account');
+        setCurrentView('app');
       } else {
         if (!currentUser && !demoMode) {
           setCurrentView('landing');
@@ -599,6 +606,8 @@ function AppContent() {
   // Plan Checkout Initiation
   const handleSelectPlan = async (planId: PlanType) => {
     if (!currentUser) {
+      setPendingPlan(planId);
+      localStorage.setItem('fsbo_pending_plan', planId);
       setAuthModalMode('signup');
       setAuthModalOpen(true);
       return;
@@ -631,6 +640,16 @@ function AppContent() {
     }
   };
 
+  // Continue checkout/trial activation once guest authenticates
+  useEffect(() => {
+    if (currentUser && pendingPlan) {
+      const target = pendingPlan;
+      setPendingPlan(null);
+      localStorage.removeItem('fsbo_pending_plan');
+      handleSelectPlan(target);
+    }
+  }, [currentUser, pendingPlan]);
+
   // 1. Render Hosted Property Website (/p/:slug)
   if (currentView === 'property' && publicPropertySlug) {
     return (
@@ -647,51 +666,72 @@ function AppContent() {
   // 2. Render Terms Page
   if (currentView === 'terms') {
     return (
-      <TermsPage
-        onBack={() => {
-          window.history.pushState({}, '', '/');
-          setCurrentView(currentUser ? 'app' : 'landing');
-        }}
-        onOpenAuth={() => {
-          setAuthModalMode('signup');
-          setAuthModalOpen(true);
-        }}
-      />
+      <>
+        <TermsPage
+          onBack={() => {
+            window.history.pushState({}, '', '/');
+            setCurrentView(currentUser ? 'app' : 'landing');
+          }}
+          onOpenAuth={() => {
+            setAuthModalMode('signup');
+            setAuthModalOpen(true);
+          }}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          initialMode={authModalMode}
+        />
+      </>
     );
   }
 
   // 3. Render Privacy Page
   if (currentView === 'privacy') {
     return (
-      <PrivacyPage
-        onBack={() => {
-          window.history.pushState({}, '', '/');
-          setCurrentView(currentUser ? 'app' : 'landing');
-        }}
-        onOpenAuth={() => {
-          setAuthModalMode('signup');
-          setAuthModalOpen(true);
-        }}
-      />
+      <>
+        <PrivacyPage
+          onBack={() => {
+            window.history.pushState({}, '', '/');
+            setCurrentView(currentUser ? 'app' : 'landing');
+          }}
+          onOpenAuth={() => {
+            setAuthModalMode('signup');
+            setAuthModalOpen(true);
+          }}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          initialMode={authModalMode}
+        />
+      </>
     );
   }
 
   // 4. Render Dynamic Pricing Page
   if (currentView === 'pricing') {
     return (
-      <PricingPage
-        saasConfig={saasConfig}
-        currentPlan={userProfile?.plan}
-        onSelectPlan={handleSelectPlan}
-        onBackToHome={() => {
-          window.history.pushState({}, '', '/');
-          setCurrentView(currentUser ? 'app' : 'landing');
-        }}
-        onLogin={() => {
-          setAuthModalMode('login');
-          setAuthModalOpen(true);
-        }}
-      />
+      <>
+        <PricingPage
+          saasConfig={saasConfig}
+          currentPlan={userProfile?.plan}
+          onSelectPlan={handleSelectPlan}
+          onBackToHome={() => {
+            window.history.pushState({}, '', '/');
+            setCurrentView(currentUser ? 'app' : 'landing');
+          }}
+          onLogin={() => {
+            setAuthModalMode('login');
+            setAuthModalOpen(true);
+          }}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          initialMode={authModalMode}
+        />
+      </>
     );
   }
 
@@ -744,7 +784,10 @@ function AppContent() {
         openInquiriesCount={openInquiriesCount}
         settings={settings}
         onToggleDarkMode={handleToggleDarkMode}
-        onOpenHelp={() => setHelpModalOpen(true)}
+        onOpenHelp={() => {
+          setActiveTab('help');
+          setCurrentView('app');
+        }}
         onOpenPricing={() => {
           window.history.pushState({}, '', '/pricing');
           setCurrentView('pricing');
@@ -972,6 +1015,20 @@ function AppContent() {
               onOpenPricing={() => {
                 window.history.pushState({}, '', '/pricing');
                 setCurrentView('pricing');
+              }}
+            />
+          )}
+
+          {activeTab === 'help' && (
+            <SectionHelp
+              onNavigate={setActiveTab}
+              onViewTerms={() => {
+                window.history.pushState({}, '', '/terms');
+                setCurrentView('terms');
+              }}
+              onViewPrivacy={() => {
+                window.history.pushState({}, '', '/privacy');
+                setCurrentView('privacy');
               }}
             />
           )}

@@ -11,7 +11,7 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-// Test Firestore connection on boot
+// Optional helper to check Firestore connection on demand (does not burn quota on boot)
 export async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -21,7 +21,6 @@ export async function testConnection() {
     }
   }
 }
-testConnection();
 
 // Standardized Firestore Error Handler conforming strictly to SKILL.md
 export enum OperationType {

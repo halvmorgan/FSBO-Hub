@@ -361,7 +361,7 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
                   onClick={onOpenPricing}
                   className="px-4 py-2 bg-gradient-to-r from-amber-500 to-[#FF6B5A] text-white rounded-xl text-xs font-bold shadow-md transition-all"
                 >
-                  Unlock Website with $49 Plan
+                  Unlock Website with {saasConfig.plans?.per_listing?.priceDisplay || '$149'} Plan
                 </button>
               </div>
             )}

@@ -41,7 +41,9 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
   onNavigate,
 }) => {
   const [analyzingPhotoId, setAnalyzingPhotoId] = useState<string | null>(null);
+  const [coachErrors, setCoachErrors] = useState<Record<string, string>>({});
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+  const [scriptError, setScriptError] = useState<string | null>(null);
   const [walkthroughScript, setWalkthroughScript] = useState<any | null>(null);
 
   // Shot list interactive checklist
@@ -161,6 +163,11 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
   // AI Photo Coach
   const handleRunPhotoCoach = async (photo: PhotoItem) => {
     setAnalyzingPhotoId(photo.id);
+    setCoachErrors((prev) => {
+      const copy = { ...prev };
+      delete copy[photo.id];
+      return copy;
+    });
     try {
       const res = await fetch('/api/gemini/photo-coach', {
         method: 'POST',
@@ -171,7 +178,10 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
         }),
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || errJson.message || `AI review unavailable (${res.status})`);
+      }
       const data = await res.json();
 
       const updated = photos.map((p) =>
@@ -185,8 +195,12 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
           : p
       );
       onUpdatePhotos(updated);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setCoachErrors((prev) => ({
+        ...prev,
+        [photo.id]: err.message || 'AI coach review failed. Please try again.',
+      }));
     } finally {
       setAnalyzingPhotoId(null);
     }
@@ -195,17 +209,22 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
   // Generate Video Walkthrough Script
   const handleGenerateScript = async () => {
     setIsGeneratingScript(true);
+    setScriptError(null);
     try {
       const res = await fetch('/api/gemini/walkthrough-script', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ property }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || errJson.message || `AI script generation failed (${res.status})`);
+      }
       const data = await res.json();
       setWalkthroughScript(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setScriptError(err.message || 'Script generation failed. Please try again.');
     } finally {
       setIsGeneratingScript(false);
     }
@@ -375,6 +394,12 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
                       )}
                     </button>
                   </div>
+
+                  {coachErrors[photo.id] && (
+                    <div className="text-[11px] text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-950/40 p-2 rounded-lg border border-red-200 dark:border-red-900/50">
+                      {coachErrors[photo.id]}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -498,6 +523,12 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
             )}
           </button>
         </div>
+
+        {scriptError && (
+          <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-xs text-red-600 dark:text-red-400 font-medium">
+            {scriptError}
+          </div>
+        )}
 
         <div>
           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">

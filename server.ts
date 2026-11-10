@@ -72,17 +72,41 @@ function checkAiCredits(cost = 1) {
   };
 }
 
-// Initialize Gemini Client
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+// Helper to resolve Gemini API key from environment variables
+function getGeminiApiKey(): string | undefined {
+  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.API_KEY || undefined;
+}
 
-// Automatic Retry up to 3 times + fallback to lighter model
+// Instantiate GoogleGenAI client with resolved key
+function getAiClient(): GoogleGenAI {
+  const apiKey = getGeminiApiKey();
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+}
+
+// Check if error is 429 rate limit or 503 high demand / service overloaded
+function isRateLimitOrBusy(err: any): boolean {
+  const status = err?.status || err?.code || err?.statusCode || 0;
+  const msg = (err?.message || '').toLowerCase();
+  return (
+    status === 429 ||
+    status === 503 ||
+    msg.includes('429') ||
+    msg.includes('503') ||
+    msg.includes('high demand') ||
+    msg.includes('overloaded') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('temporarily unavailable')
+  );
+}
+
+// Automatic Retry up to 3 times for 429/503 with exponential backoff + fallback to lighter model
 async function generateContentWithRetryAndFallback(params: {
   contents: any;
   config?: any;
@@ -90,17 +114,26 @@ async function generateContentWithRetryAndFallback(params: {
   fallbackModel?: string;
   maxRetries?: number;
 }): Promise<any> {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    const err: any = new Error('GEMINI_API_KEY is not configured in server environment variables.');
+    err.status = 401;
+    err.isAuthError = true;
+    throw err;
+  }
+
+  const aiClient = getAiClient();
   const mainModel = params.mainModel || 'gemini-3.8-flash';
-  const fallbackModel = params.fallbackModel || 'gemini-2.5-flash';
+  const fallbackModel = params.fallbackModel || 'gemini-3.1-flash-lite';
   const maxRetries = params.maxRetries ?? 3;
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   let lastError: any = null;
 
-  // 1. Try main model with up to 3 retries
+  // 1. Try main model with up to 3 retries (only for 429/503)
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await ai.models.generateContent({
+      const response = await aiClient.models.generateContent({
         model: mainModel,
         contents: params.contents,
         config: params.config,
@@ -108,18 +141,27 @@ async function generateContentWithRetryAndFallback(params: {
       return response;
     } catch (err: any) {
       lastError = err;
-      console.warn(`[Gemini Retry] Main model ${mainModel} attempt ${attempt}/${maxRetries} failed:`, err.message || err);
+      const status = err?.status || err?.code || err?.statusCode;
+      const msg = err?.message || String(err);
+      console.error(`[Gemini Error] Main model "${mainModel}" attempt ${attempt}/${maxRetries} failed: Status ${status} - ${msg}`);
+
+      // If this is an auth/key or model error, fail fast without wasting time retrying
+      if (!isRateLimitOrBusy(err)) {
+        throw err;
+      }
+
       if (attempt < maxRetries) {
-        await wait(600 * attempt);
+        const delay = 600 * Math.pow(2, attempt - 1); // 600ms, 1200ms
+        await wait(delay);
       }
     }
   }
 
-  // 2. Fallback to lighter model
-  console.log(`[Gemini Fallback] Switching to lighter model: ${fallbackModel}`);
+  // 2. Fallback to lighter model (gemini-3.1-flash-lite)
+  console.warn(`[Gemini Fallback] Main model ${mainModel} busy after ${maxRetries} attempts. Falling back to ${fallbackModel}...`);
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const response = await ai.models.generateContent({
+      const response = await aiClient.models.generateContent({
         model: fallbackModel,
         contents: params.contents,
         config: params.config,
@@ -127,9 +169,16 @@ async function generateContentWithRetryAndFallback(params: {
       return response;
     } catch (err: any) {
       lastError = err;
-      console.warn(`[Gemini Fallback] Model ${fallbackModel} attempt ${attempt}/2 failed:`, err.message || err);
+      const status = err?.status || err?.code || err?.statusCode;
+      const msg = err?.message || String(err);
+      console.error(`[Gemini Fallback Error] Fallback model "${fallbackModel}" attempt ${attempt}/2 failed: Status ${status} - ${msg}`);
+
+      if (!isRateLimitOrBusy(err)) {
+        throw err;
+      }
+
       if (attempt < 2) {
-        await wait(750);
+        await wait(1000);
       }
     }
   }
@@ -137,14 +186,68 @@ async function generateContentWithRetryAndFallback(params: {
   throw lastError || new Error('Our AI is busy right now. Please try again in a few moments.');
 }
 
-// Helper for friendly error messages (never dump raw JSON stack traces)
-function handleGeminiError(res: Response, error: unknown, context: string) {
-  console.error(`Technical error in ${context}:`, error);
-  const friendlyMessage = 'Our AI is busy right now. Please try again in a few moments.';
-  return res.status(503).json({
-    error: friendlyMessage,
+// Helper for honest, friendly error messages
+function handleGeminiError(res: Response, error: any, context: string) {
+  const status = error?.status || error?.code || error?.statusCode;
+  const message = error?.message || String(error);
+  console.error(`[Real Underlying Gemini Error] Context: "${context}" | Status: ${status} | Message: ${message}`, error);
+
+  const lowerMsg = message.toLowerCase();
+  const isAuthOrKey =
+    error?.isAuthError ||
+    status === 401 ||
+    status === 403 ||
+    lowerMsg.includes('api key') ||
+    lowerMsg.includes('authentication') ||
+    lowerMsg.includes('permission_denied') ||
+    lowerMsg.includes('unauthenticated') ||
+    lowerMsg.includes('insufficient authentication');
+
+  const isModelError =
+    status === 404 ||
+    (lowerMsg.includes('models/') && lowerMsg.includes('not found')) ||
+    lowerMsg.includes('is not found for api version');
+
+  const isBusy =
+    status === 429 ||
+    status === 503 ||
+    lowerMsg.includes('429') ||
+    lowerMsg.includes('503') ||
+    lowerMsg.includes('high demand') ||
+    lowerMsg.includes('overloaded') ||
+    lowerMsg.includes('resource_exhausted');
+
+  if (isAuthOrKey) {
+    return res.status(401).json({
+      error: 'Gemini API authentication failed. Please verify that a valid GEMINI_API_KEY is configured in your server environment.',
+      details: message,
+      isAuthError: true,
+      context,
+    });
+  }
+
+  if (isModelError) {
+    return res.status(400).json({
+      error: 'The requested AI model is unavailable or invalid. Please check the model configuration.',
+      details: message,
+      isModelError: true,
+      context,
+    });
+  }
+
+  if (isBusy) {
+    return res.status(503).json({
+      error: 'Our AI is busy right now. Please try again in a few moments.',
+      details: message,
+      isAiBusy: true,
+      context,
+    });
+  }
+
+  return res.status(500).json({
+    error: `AI request failed: ${message.slice(0, 160)}`,
+    details: message,
     context,
-    isAiBusy: true,
   });
 }
 
@@ -591,7 +694,7 @@ Respond in JSON only.`;
 app.post('/api/stripe/create-checkout-session', async (req: Request, res: Response) => {
   try {
     const { planId, userEmail, userId, propertyId } = req.body;
-    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+    const appUrl = (process.env.APP_URL || 'https://fsbo-command-center.ai.studio').replace(/\/+$/, '');
 
     // If Stripe is configured with live secret key:
     if (stripe && process.env.STRIPE_SECRET_KEY) {
@@ -646,8 +749,8 @@ app.post('/api/stripe/create-checkout-session', async (req: Request, res: Respon
       const session = await stripe.checkout.sessions.create({
         line_items: lineItems as any,
         mode: planId === 'pro' ? 'subscription' : 'payment',
-        success_url: `${appUrl}/?session_id={CHECKOUT_SESSION_ID}&upgraded=${planId}`,
-        cancel_url: `${appUrl}/?canceled=true`,
+        success_url: `${appUrl}/account?session_id={CHECKOUT_SESSION_ID}&upgraded=${planId}`,
+        cancel_url: `${appUrl}/pricing?canceled=true`,
         customer_email: userEmail,
         client_reference_id: userId,
         metadata: { userId, planId, propertyId: propertyId || '' },
@@ -659,7 +762,7 @@ app.post('/api/stripe/create-checkout-session', async (req: Request, res: Respon
     // Dev Simulation Mode (if Stripe keys not yet configured in environment):
     // Provides seamless local verification while adhering to Stripe specs
     return res.json({
-      url: `${appUrl}/?simulated_checkout=success&upgraded=${planId}&user=${userId}`,
+      url: `${appUrl}/account?simulated_checkout=success&upgraded=${planId}&user=${userId}`,
       simulated: true,
       message: 'Stripe keys not set in .env. Test mode activated.',
     });
@@ -672,12 +775,12 @@ app.post('/api/stripe/create-checkout-session', async (req: Request, res: Respon
 app.post('/api/stripe/create-portal-session', async (req: Request, res: Response) => {
   try {
     const { customerId } = req.body;
-    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+    const appUrl = (process.env.APP_URL || 'https://fsbo-command-center.ai.studio').replace(/\/+$/, '');
 
     if (stripe && customerId) {
       const session = await stripe.billingPortal.sessions.create({
         customer: customerId,
-        return_url: `${appUrl}/account`,
+        return_url: `${appUrl}/account?portal_notice=true`,
       });
       return res.json({ url: session.url });
     }

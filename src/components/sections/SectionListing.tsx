@@ -54,7 +54,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `HTTP ${res.status}`);
+        throw new Error(errData.error || errData.message || (res.status === 503 ? 'Our AI is busy right now. Please try again shortly.' : `Generation failed (${res.status})`));
       }
 
       const data = await res.json();
@@ -106,24 +106,31 @@ export const SectionListing: React.FC<SectionListingProps> = ({
             </p>
           </div>
 
-          <button
-            type="button"
-            disabled={isGenerating}
-            onClick={handleGenerateCopy}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] dark:hover:bg-[#fa5644] transition-all disabled:opacity-50 shadow-md shrink-0"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Crafting Compliant Copy...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 text-[#F2B544]" />
-                {listingCopy ? 'Regenerate All Versions' : 'Generate Complete Listing'}
-              </>
+          <div className="flex flex-col items-start md:items-end gap-1.5 shrink-0">
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={handleGenerateCopy}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] dark:hover:bg-[#fa5644] transition-all disabled:opacity-50 shadow-md shrink-0"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Crafting Compliant Copy...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-[#F2B544]" />
+                  {listingCopy ? 'Regenerate All Versions' : 'Generate Complete Listing'}
+                </>
+              )}
+            </button>
+            {errorMsg && (
+              <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
+                {errorMsg}
+              </span>
             )}
-          </button>
+          </div>
         </div>
 
         {/* Tone Selector Buttons */}

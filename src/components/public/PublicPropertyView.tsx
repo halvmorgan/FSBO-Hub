@@ -53,8 +53,19 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [cachedBanner, setCachedBanner] = useState(false);
+
   useEffect(() => {
     async function loadProperty() {
+      if (!slug) return;
+      const cacheKey = `fsbo_public_site_${slug}`;
+
+      let cachedData: PublicSiteDoc | null = null;
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) cachedData = JSON.parse(raw);
+      } catch (e) {}
+
       try {
         setLoading(true);
         setError(null);
@@ -62,7 +73,12 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
-          setError('Property not found. This listing may have been unlisted or the URL is incorrect.');
+          if (cachedData) {
+            setProperty(cachedData);
+            setCachedBanner(true);
+            return;
+          }
+          setError('This listing could not be found or may have been unlisted.');
           return;
         }
 
@@ -73,17 +89,24 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
         }
 
         setProperty(data);
+        setCachedBanner(false);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+        } catch (e) {}
       } catch (err: any) {
-        console.error('Error loading public site:', err);
-        setError('Unable to load property details right now. Please try again later.');
+        console.warn('Error loading public site (falling back to cache):', err);
+        if (cachedData) {
+          setProperty(cachedData);
+          setCachedBanner(true);
+        } else {
+          setError('Property details are momentarily unavailable. Please check back shortly.');
+        }
       } finally {
         setLoading(false);
       }
     }
 
-    if (slug) {
-      loadProperty();
-    }
+    loadProperty();
   }, [slug]);
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
@@ -140,8 +163,8 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
         <div className="w-16 h-16 bg-stone-200 text-stone-600 rounded-3xl flex items-center justify-center mb-4">
           <Building className="w-8 h-8" />
         </div>
-        <h2 className="text-2xl font-heading font-bold text-[#0F2A44]">Listing Not Available</h2>
-        <p className="text-stone-600 max-w-md mt-2 text-sm">{error || 'This listing does not exist.'}</p>
+        <h2 className="text-2xl font-heading font-bold text-[#0F2A44]">Property Details Momentarily Unavailable</h2>
+        <p className="text-stone-600 max-w-md mt-2 text-sm">{error || 'This property showcase is momentarily unavailable. Please check back in a few moments.'}</p>
         {onNavigateHome && (
           <button
             onClick={onNavigateHome}
@@ -162,6 +185,11 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
 
   return (
     <div className="min-h-screen bg-[#F8F6F2] text-[#0F2A44] font-sans">
+      {cachedBanner && (
+        <div className="bg-amber-50 text-amber-900 border-b border-amber-200 px-4 py-2 text-xs text-center font-medium">
+          Viewing cached listing details. Live updates will refresh shortly.
+        </div>
+      )}
       {/* Top Floating Sticky Header */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">

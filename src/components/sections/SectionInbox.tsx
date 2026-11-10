@@ -64,6 +64,7 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
   const [generatedSms, setGeneratedSms] = useState('');
   const [generatedEmailSubject, setGeneratedEmailSubject] = useState('');
   const [generatedEmailBody, setGeneratedEmailBody] = useState('');
+  const [replyError, setReplyError] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<'sms' | 'email' | null>(null);
 
   // Helper for 24h overdue check
@@ -151,6 +152,7 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
     if (!selectedInquiry) return;
     setSelectedTemplate(template);
     setIsGeneratingReply(true);
+    setReplyError(null);
 
     try {
       const res = await fetch('/api/gemini/inquiry-reply', {
@@ -166,13 +168,17 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
         }),
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || errJson.message || `AI reply unavailable (${res.status})`);
+      }
       const data = await res.json();
       setGeneratedSms(data.sms || '');
       setGeneratedEmailSubject(data.emailSubject || '');
       setGeneratedEmailBody(data.emailBody || '');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setReplyError(err.message || 'AI reply unavailable. Using template fallback.');
       // Fallback
       setGeneratedSms(
         `Hi ${selectedInquiry.name}, thank you for your interest in ${property.address}! When is a good time for a quick 10-minute tour? - ${settings.sellerName}`
@@ -378,6 +384,12 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
                       </button>
                     ))}
                   </div>
+
+                  {replyError && (
+                    <div className="text-[11px] text-amber-700 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200 dark:border-amber-900/40">
+                      {replyError}
+                    </div>
+                  )}
 
                   {/* Generated SMS & Email Outputs */}
                   {generatedSms ? (

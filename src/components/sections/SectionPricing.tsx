@@ -53,6 +53,7 @@ export const SectionPricing: React.FC<SectionPricingProps> = ({
   const [newCondition, setNewCondition] = useState<'Superior' | 'Similar' | 'Inferior'>('Similar');
   const [newAdjustments, setNewAdjustments] = useState('0');
   const [newNotes, setNewNotes] = useState('');
+  const [compError, setCompError] = useState<string | null>(null);
 
   // Price change modal / form
   const [changePriceVal, setChangePriceVal] = useState(property.price.toString());
@@ -82,7 +83,17 @@ export const SectionPricing: React.FC<SectionPricingProps> = ({
   // Add Comp
   const handleAddComp = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAddress || !newPrice) return;
+    setCompError(null);
+
+    const missing: string[] = [];
+    if (!newAddress.trim()) missing.push('Address');
+    if (!newPrice.trim() || parseInt(newPrice) <= 0) missing.push('Sale Price');
+    if (!newSqft.trim() || parseInt(newSqft) <= 0) missing.push('Sq Ft');
+
+    if (missing.length > 0) {
+      setCompError(`Please fill in required fields: ${missing.join(', ')}.`);
+      return;
+    }
 
     const salePrice = parseInt(newPrice) || 0;
     const adjustments = parseInt(newAdjustments) || 0;
@@ -416,6 +427,12 @@ export const SectionPricing: React.FC<SectionPricingProps> = ({
               Add Comp
             </button>
           </div>
+          {compError && (
+            <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>{compError}</span>
+            </div>
+          )}
         </form>
       </div>
 

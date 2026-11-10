@@ -243,4 +243,5 @@ export type ActiveTab =
   | 'closing'
   | 'settings'
   | 'account'
+  | 'help'
   | 'admin';

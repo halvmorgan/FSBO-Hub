@@ -18,6 +18,7 @@ import {
   collection,
   onSnapshot,
   query,
+  where,
   orderBy,
   addDoc,
   deleteDoc,
@@ -66,10 +67,26 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const SAAS_CONFIG_CACHE_KEY = 'fsbo_saas_config_cached';
+const SAAS_CONFIG_TIMESTAMP_KEY = 'fsbo_saas_config_ts';
+const CACHE_TTL_MS = 60 * 60 * 1000; // 60 minutes
+
+function getInitialSaasConfig(): SaasConfig {
+  try {
+    const cached = localStorage.getItem(SAAS_CONFIG_CACHE_KEY);
+    if (cached) {
+      return { ...DEFAULT_SAAS_CONFIG, ...JSON.parse(cached) };
+    }
+  } catch (e) {
+    // ignore
+  }
+  return DEFAULT_SAAS_CONFIG;
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [saasConfig, setSaasConfig] = useState<SaasConfig>(DEFAULT_SAAS_CONFIG);
+  const [saasConfig, setSaasConfig] = useState<SaasConfig>(getInitialSaasConfig);
   const [loading, setLoading] = useState(true);
   const [userProperties, setUserProperties] = useState<PropertyProfile[]>([]);
   const [activePropertyId, setActivePropertyIdState] = useState<string | null>(null);
@@ -89,24 +106,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // 2. Load Global SaaS Config from Firestore `saasConfig/global`
+  // 2. Load Global SaaS Config from Firestore `saasConfig/global` once per session (cached up to 60 mins)
   useEffect(() => {
-    const configRef = doc(db, 'saasConfig', 'global');
-    const unsub = onSnapshot(
-      configRef,
-      (snap) => {
-        if (snap.exists()) {
-          setSaasConfig({ ...DEFAULT_SAAS_CONFIG, ...snap.data() } as SaasConfig);
-        } else {
-          // Initialize default config if not present
-          setDoc(configRef, DEFAULT_SAAS_CONFIG).catch(() => {});
+    async function loadConfigOnce() {
+      try {
+        const lastFetched = parseInt(localStorage.getItem(SAAS_CONFIG_TIMESTAMP_KEY) || '0', 10);
+        const isFresh = Date.now() - lastFetched < CACHE_TTL_MS;
+
+        if (isFresh) {
+          const cached = localStorage.getItem(SAAS_CONFIG_CACHE_KEY);
+          if (cached) {
+            setSaasConfig({ ...DEFAULT_SAAS_CONFIG, ...JSON.parse(cached) });
+            return;
+          }
         }
-      },
-      (error) => {
-        console.warn('Could not read saasConfig from cloud, using defaults:', error.message);
+
+        const configRef = doc(db, 'saasConfig', 'global');
+        const snap = await getDoc(configRef);
+        if (snap.exists()) {
+          const merged = { ...DEFAULT_SAAS_CONFIG, ...snap.data() } as SaasConfig;
+          setSaasConfig(merged);
+          localStorage.setItem(SAAS_CONFIG_CACHE_KEY, JSON.stringify(merged));
+          localStorage.setItem(SAAS_CONFIG_TIMESTAMP_KEY, Date.now().toString());
+        }
+      } catch (error: any) {
+        console.warn('Could not read saasConfig from cloud (using cached/defaults):', error.message);
+        try {
+          const cached = localStorage.getItem(SAAS_CONFIG_CACHE_KEY);
+          if (cached) {
+            setSaasConfig({ ...DEFAULT_SAAS_CONFIG, ...JSON.parse(cached) });
+          }
+        } catch {}
       }
-    );
-    return () => unsub();
+    }
+
+    loadConfigOnce();
   }, []);
 
   // 3. Auth State Observer
@@ -216,16 +250,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // 5. Sync User's Notifications
   useEffect(() => {
     if (!currentUser) return;
-    const notifsCol = collection(db, 'notifications');
+    const notifsQuery = query(collection(db, 'notifications'), where('uid', '==', currentUser.uid));
     const unsub = onSnapshot(
-      notifsCol,
+      notifsQuery,
       (snap) => {
         const notifList: InAppNotification[] = [];
         snap.forEach((d) => {
-          const item = d.data() as InAppNotification;
-          if (item.uid === currentUser.uid) {
-            notifList.push({ ...item, id: d.id });
-          }
+          notifList.push({ ...(d.data() as InAppNotification), id: d.id });
         });
         notifList.sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -374,6 +405,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateSaasConfig = async (newConfig: Partial<SaasConfig>) => {
+    const merged = { ...saasConfig, ...newConfig };
+    setSaasConfig(merged);
+    try {
+      localStorage.setItem(SAAS_CONFIG_CACHE_KEY, JSON.stringify(merged));
+      localStorage.setItem(SAAS_CONFIG_TIMESTAMP_KEY, Date.now().toString());
+    } catch {}
     const configRef = doc(db, 'saasConfig', 'global');
     await updateDoc(configRef, { ...newConfig, updatedAt: new Date().toISOString() });
   };
