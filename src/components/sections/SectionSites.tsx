@@ -8,6 +8,11 @@ import {
 import { WhyThisMatters } from '../common/WhyThisMatters';
 import { Tooltip } from '../common/Tooltip';
 import {
+  formatKeyFacts,
+  formatUpgradesList,
+  formatAiText,
+} from '../../lib/formatAiCopy';
+import {
   Share2,
   ExternalLink,
   Copy,
@@ -74,12 +79,12 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
     const siteKey = site.id.toLowerCase();
 
     if (siteKey.includes('facebook')) {
-      copyText = listingCopy?.marketplaceVersion || `${property.address} - For Sale By Owner`;
+      copyText = formatAiText(listingCopy?.marketplaceVersion, `${property.address} - For Sale By Owner`);
     } else if (siteKey.includes('craigslist')) {
-      copyText = listingCopy?.craigslistVersion || `${property.address} - For Sale By Owner`;
+      copyText = formatAiText(listingCopy?.craigslistVersion, `${property.address} - For Sale By Owner`);
     } else {
       copyText = listingCopy
-        ? `${listingCopy.headline}\n\n${listingCopy.fullDescription}\n\nKEY FACTS:\n${listingCopy.keyFactsBlock}\n\nUPGRADES:\n${listingCopy.upgradesListBlock}`
+        ? `${formatAiText(listingCopy.headline)}\n\n${formatAiText(listingCopy.fullDescription)}\n\nKEY FACTS:\n${formatKeyFacts(listingCopy.keyFactsBlock)}\n\nUPGRADES:\n${formatUpgradesList(listingCopy.upgradesListBlock)}`
         : `${property.address} - For Sale By Owner: $${property.price.toLocaleString()}, ${property.beds} Beds, ${property.bathsFull} Baths, ${property.sqft} SqFt.`;
     }
 

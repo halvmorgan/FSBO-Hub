@@ -26,6 +26,7 @@ import {
   DEFAULT_PROMOTE_GROUPS,
 } from './lib/defaults';
 import { getAllPhotosFromDB, savePhotoToDB, clearAllDB } from './lib/indexedDb';
+import { sanitizeListingCopy } from './lib/formatAiCopy';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
@@ -185,10 +186,15 @@ function AppContent() {
 
   // 6. Listing Copy
   const [listingCopy, setListingCopy] = useState<ListingCopyData | null>(() => {
-    const saved = localStorage.getItem('fsbo_listing_copy');
-    return saved
-      ? JSON.parse(saved)
-      : {
+    try {
+      const saved = localStorage.getItem('fsbo_listing_copy');
+      if (saved) {
+        return sanitizeListingCopy(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.warn('Could not load saved listing copy:', e);
+    }
+    return {
           tone: 'Warm',
           headline: 'Custom Executive Home on Private Wooded Lot in Rochester Hills',
           fullDescription: `Welcome home to 4288 Meadowview Drive, a meticulously maintained 4-bedroom executive residence nestled on a private wooded lot backing up to township green space.\n\nThe heart of the home is a remodeled chef's kitchen featuring quartz waterfall countertops, soft-close custom cabinetry, and premium stainless steel appliances. Solid hardwood floors run throughout the main living areas, complemented by abundant natural sunlight and an inviting gas fireplace.\n\nUpstairs, the expansive primary suite boasts a walk-in tile shower and dual vanity. The fully finished daylight basement offers an expansive recreation space, wet bar, and workshop. Outside, relax on the composite Trex deck overlooking the tranquil, fully fenced backyard. Located in the award-winning Rochester Community School district.`,
@@ -565,7 +571,7 @@ function AppContent() {
     if (backup.property) setProperty(backup.property);
     if (backup.comps) setComps(backup.comps);
     if (backup.priceHistory) setPriceHistory(backup.priceHistory);
-    if (backup.listingCopy) setListingCopy(backup.listingCopy);
+    if (backup.listingCopy) setListingCopy(sanitizeListingCopy(backup.listingCopy));
     if (backup.sites) setSites(backup.sites);
     if (backup.showings) setShowings(backup.showings);
     if (backup.openHouses) setOpenHouses(backup.openHouses);

@@ -772,14 +772,14 @@ NEVER use phrases like "perfect for young families", "great for singles", "walk 
 ALWAYS describe the PHYSICAL FEATURES OF THE HOUSE, never the buyer.
 
 Generate:
-1. "headline"
-2. "fullDescription"
-3. "keyFactsBlock"
-4. "upgradesListBlock"
-5. "marketplaceVersion"
-6. "craigslistVersion"
-7. "socialPostVersion"
-8. "flyerTeaser"
+1. "headline": string
+2. "fullDescription": string
+3. "keyFactsBlock": string (formatted lines like "Price: $435,000\nBeds: 4\nBaths: 2 Full, 1 Half\nSq Ft: 2,450\nYear Built: 1998\nTaxes: $4,620/yr\nSchool District: ...")
+4. "upgradesListBlock": string (bullet list with • for each upgrade)
+5. "marketplaceVersion": string
+6. "craigslistVersion": string
+7. "socialPostVersion": string
+8. "flyerTeaser": string
 9. "fairHousingAudit":
    - "isClean": boolean
    - "flaggedPhrases": array of strings
@@ -796,6 +796,74 @@ Respond in JSON only.`;
 
     const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
     const parsed = parseAiJson(response.text || '{}', {});
+
+    // Normalize keyFactsBlock if returned as an object or array
+    if (parsed.keyFactsBlock && typeof parsed.keyFactsBlock !== 'string') {
+      if (typeof parsed.keyFactsBlock === 'object') {
+        const labelMap: Record<string, string> = {
+          price: 'Price',
+          askingprice: 'Price',
+          address: 'Address',
+          beds: 'Beds',
+          bedrooms: 'Beds',
+          baths: 'Baths',
+          bathrooms: 'Baths',
+          bathsfull: 'Full Baths',
+          bathshalf: 'Half Baths',
+          sqft: 'Sq Ft',
+          squarefootage: 'Sq Ft',
+          squarefeet: 'Sq Ft',
+          yearbuilt: 'Year Built',
+          annualtaxes: 'Taxes',
+          taxes: 'Taxes',
+          propertytaxes: 'Taxes',
+          schooldistrict: 'School District',
+          schools: 'School District',
+        };
+        const lines: string[] = [];
+        for (const [k, v] of Object.entries(parsed.keyFactsBlock)) {
+          if (v === undefined || v === null || v === '') continue;
+          const normKey = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const label = labelMap[normKey] || k.replace(/([A-Z])/g, ' $1').trim().replace(/^\w/, (c) => c.toUpperCase());
+          let strVal: any = v;
+          if (normKey.includes('price') && typeof v === 'number') strVal = `$${v.toLocaleString()}`;
+          else if (normKey.includes('tax') && typeof v === 'number') strVal = `$${v.toLocaleString()}/yr`;
+          else if (normKey.includes('square') && typeof v === 'number') strVal = v.toLocaleString();
+          else if (typeof v === 'object' && !Array.isArray(v) && v !== null) {
+            strVal = Object.entries(v).map(([sk, sv]) => `${sk}: ${sv}`).join(', ');
+          }
+          lines.push(`${label}: ${strVal}`);
+        }
+        parsed.keyFactsBlock = lines.join('\n');
+      } else if (Array.isArray(parsed.keyFactsBlock)) {
+        parsed.keyFactsBlock = parsed.keyFactsBlock.map((i: any) => String(i)).join('\n');
+      }
+    }
+
+    // Normalize upgradesListBlock if returned as an array or object
+    if (parsed.upgradesListBlock && typeof parsed.upgradesListBlock !== 'string') {
+      if (Array.isArray(parsed.upgradesListBlock)) {
+        parsed.upgradesListBlock = parsed.upgradesListBlock
+          .map((item: any) => {
+            if (typeof item === 'string') {
+              const t = item.trim();
+              return t.startsWith('•') || t.startsWith('-') ? t : `• ${t}`;
+            }
+            if (typeof item === 'object' && item !== null) {
+              const n = item.item || item.name || item.upgrade || item.title || Object.values(item)[0] || '';
+              const yr = item.year || item.date ? ` (${item.year || item.date})` : '';
+              return `• ${n}${yr}`;
+            }
+            return `• ${String(item)}`;
+          })
+          .join('\n');
+      } else if (typeof parsed.upgradesListBlock === 'object') {
+        parsed.upgradesListBlock = Object.entries(parsed.upgradesListBlock)
+          .map(([k, v]) => `• ${k.replace(/^\w/, (c) => c.toUpperCase())}: ${v}`)
+          .join('\n');
+      }
+    }
+
     return res.json({
       ...parsed,
       modelUsed,
