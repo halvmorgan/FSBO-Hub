@@ -37,13 +37,18 @@ import { PricingPage } from './components/public/PricingPage';
 import { TermsPage } from './components/public/TermsPage';
 import { PrivacyPage } from './components/public/PrivacyPage';
 import { PublicPropertyView } from './components/public/PublicPropertyView';
+import { PublicListingView } from './components/public/PublicListingView';
 import { AuthModal } from './components/auth/AuthModal';
 
 // SaaS Core Features
+import { SectionMyListing } from './components/sections/SectionMyListing';
 import { SectionAccount } from './components/account/SectionAccount';
 import { AdminPanel } from './components/admin/AdminPanel';
 import { HelpModal } from './components/common/HelpModal';
 import { NotificationBell } from './components/common/NotificationBell';
+import { uploadListingPhoto } from './lib/photoStorage';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
 
 // 13 Original Sections
 import { SectionDashboard } from './components/sections/SectionDashboard';

@@ -136,6 +136,60 @@
         "createdAt": { "type": "string", "description": "Submission timestamp." }
       },
       "required": ["id", "uid", "userEmail", "message"]
+    },
+    "Listing": {
+      "title": "Listing",
+      "description": "Public-facing property landing page data viewable by buyers at /listing/<listingId>.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique listing identifier." },
+        "ownerUid": { "type": "string", "description": "Homeowner UID." },
+        "address": { "type": "string", "description": "Street address." },
+        "city": { "type": "string", "description": "City." },
+        "state": { "type": "string", "description": "State." },
+        "zip": { "type": "string", "description": "Zip code." },
+        "price": { "type": "number", "description": "Asking price." },
+        "beds": { "type": "number", "description": "Bedrooms." },
+        "bathsFull": { "type": "number", "description": "Full bathrooms." },
+        "bathsHalf": { "type": "number", "description": "Half bathrooms." },
+        "sqft": { "type": "number", "description": "Finished square feet." },
+        "lotSize": { "type": "string", "description": "Lot size." },
+        "yearBuilt": { "type": "number", "description": "Year built." },
+        "propertyType": { "type": "string", "description": "Single Family, Condo, Townhouse." },
+        "garage": { "type": "string", "description": "Garage description." },
+        "heating": { "type": "string", "description": "Heating description." },
+        "cooling": { "type": "string", "description": "Cooling description." },
+        "basement": { "type": "string", "description": "Basement description." },
+        "roof": { "type": "string", "description": "Roof description." },
+        "taxes": { "type": "number", "description": "Annual taxes." },
+        "schoolDistrict": { "type": "string", "description": "School district." },
+        "description": { "type": "string", "description": "Public listing description." },
+        "features": { "type": "array", "description": "Key features list." },
+        "upgrades": { "type": "array", "description": "Upgrades list." },
+        "photos": { "type": "array", "description": "Public gallery photos." },
+        "openHouses": { "type": "array", "description": "Upcoming open house sessions." },
+        "published": { "type": "boolean", "description": "Publication status." },
+        "updatedAt": { "type": "string", "description": "Last update timestamp." }
+      },
+      "required": ["id", "ownerUid", "address", "price"]
+    },
+    "ListingInquiry": {
+      "title": "ListingInquiry",
+      "description": "Buyer lead or showing request submitted on a listing page.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Inquiry identifier." },
+        "listingId": { "type": "string", "description": "Target listing ID." },
+        "buyerName": { "type": "string", "description": "Full name." },
+        "buyerEmail": { "type": "string", "description": "Email." },
+        "buyerPhone": { "type": "string", "description": "Phone number." },
+        "interestType": { "type": "string", "description": "Interest category." },
+        "message": { "type": "string", "description": "Message text." },
+        "preferredDate": { "type": "string", "description": "Showing date." },
+        "preferredTime": { "type": "string", "description": "Showing time." },
+        "createdAt": { "type": "string", "description": "Created timestamp." }
+      },
+      "required": ["id", "buyerName", "buyerEmail"]
     }
   },
   "firestore": {
@@ -146,6 +200,14 @@
     "/users/{userId}/properties/{propertyId}": {
       "schema": { "$ref": "Property" },
       "description": "All properties owned and managed by the user."
+    },
+    "/listings/{listingId}": {
+      "schema": { "$ref": "Listing" },
+      "description": "Public property landing pages viewable by anyone at /listing/<listingId>."
+    },
+    "/listings/{listingId}/inquiries/{inquiryId}": {
+      "schema": { "$ref": "ListingInquiry" },
+      "description": "Buyer inquiries and showing requests submitted by visitors on a listing."
     },
     "/publicSites/{slug}": {
       "schema": { "$ref": "PublicSite" },

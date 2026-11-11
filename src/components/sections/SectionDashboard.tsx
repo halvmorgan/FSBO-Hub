@@ -180,8 +180,20 @@ export const SectionDashboard: React.FC<SectionDashboardProps> = ({
               {property.address || 'Your Home'}, {property.city || 'City'}
             </h2>
             <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
-              Target asking price: <strong className="text-[#F2B544]">${property.price.toLocaleString()}</strong> •{' '}
-              {property.beds} Beds • {property.bathsFull} Full / {property.bathsHalf} Half Baths • {property.sqft.toLocaleString()} SqFt
+              Target asking price:{' '}
+              {property.price && property.price > 0 ? (
+                <strong className="text-[#F2B544]">${property.price.toLocaleString()}</strong>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('pricing')}
+                  className="font-bold text-[#F2B544] hover:underline cursor-pointer"
+                >
+                  Set your price →
+                </button>
+              )}{' '}
+              • {property.beds || 0} Beds • {property.bathsFull || 0} Full / {property.bathsHalf || 0} Half Baths •{' '}
+              {property.sqft ? property.sqft.toLocaleString() : '—'} SqFt
             </p>
           </div>
 
@@ -462,7 +474,7 @@ export const SectionDashboard: React.FC<SectionDashboardProps> = ({
               {/* Showings list */}
               {upcomingShowings.length === 0 && upcomingOpenHouses.length === 0 ? (
                 <div className="p-4 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 text-xs text-slate-400">
-                  No upcoming showings or open houses scheduled.
+                  No showings yet.
                 </div>
               ) : (
                 <>

@@ -41,6 +41,29 @@ service cloud.firestore {
       }
     }
 
+    // Public Property Listings (/listing/<listingId>)
+    match /listings/{listingId} {
+      // Readable by anyone without signing in (read-only buyer view)
+      allow get: if true;
+      allow list: if true;
+      allow create: if isSignedIn() && (request.resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+
+      // Buyer Inquiries & Showing Requests on this listing
+      match /inquiries/{inquiryId} {
+        // Any visitor/buyer can submit a lead / contact request
+        allow create: if request.resource.data.buyerName is string &&
+                         request.resource.data.buyerName.size() <= 200 &&
+                         request.resource.data.buyerEmail is string;
+        // Only property owner or admin can read and manage buyer leads
+        allow get, list, update, delete: if isSignedIn() && (
+          get(/databases/$(database)/documents/listings/$(listingId)).data.ownerUid == request.auth.uid ||
+          isAdmin()
+        );
+      }
+    }
+
     // Hosted Public Websites
     match /publicSites/{slug} {
       // Readable by anyone if active, or owner/admin

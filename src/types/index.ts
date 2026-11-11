@@ -44,6 +44,8 @@ export interface PropertyProfile {
   floorPlanImageId?: string;
   published?: boolean;
   publishedSlug?: string;
+  description?: string;
+  setupComplete?: boolean;
 }
 
 export interface PhotoItem {
@@ -230,6 +232,7 @@ export interface PromoteGroup {
 }
 
 export type ActiveTab =
+  | 'my-listing'
   | 'dashboard'
   | 'profile'
   | 'ai-finder'

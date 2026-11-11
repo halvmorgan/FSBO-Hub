@@ -98,8 +98,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const creditsPercent = Math.min(100, Math.round((creditsUsed / creditsMax) * 100));
 
   const navItems: NavItem[] = [
+    { id: 'my-listing', label: 'My Listing', icon: Home, badge: 'Live', badgeColor: 'bg-emerald-500 text-white' },
     { id: 'dashboard', label: 'Home Dashboard', icon: LayoutDashboard },
-    { id: 'profile', label: 'Property Profile', icon: Home },
+    { id: 'profile', label: 'Property Profile', icon: Building2 },
     { id: 'ai-finder', label: 'AI Feature Finder', icon: Sparkles, badge: 'Gemini', badgeColor: 'bg-[#F2B544] text-[#0F2A44]' },
     { id: 'photos', label: 'Photos & Studio', icon: Camera },
     { id: 'pricing', label: 'Pricing & Comps', icon: DollarSign },
@@ -171,9 +172,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={() => handleSelectTab('dashboard')}
-              className="flex items-center gap-2.5 text-left hover:opacity-90 transition-opacity focus:outline-none"
-              title="FSBO Compass - Go to My Home Dashboard"
+              onClick={() => handleSelectTab('my-listing')}
+              className="flex items-center gap-2.5 text-left hover:opacity-90 transition-opacity focus:outline-none cursor-pointer"
+              title="FSBO Compass - Go to My Listing"
             >
               <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center text-white font-bold shadow-md shadow-[#FF6B5A]/20 shrink-0">
                 <Compass className="w-5 h-5 text-white" />
@@ -526,13 +527,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#0F2A44] border-t border-[#1E4268]/50 px-2 py-1.5 flex items-center justify-around text-slate-300 font-sans">
         <button
           type="button"
-          onClick={() => setActiveTab('dashboard')}
+          onClick={() => setActiveTab('my-listing')}
           className={`flex flex-col items-center gap-0.5 p-1 text-[10px] font-medium ${
-            activeTab === 'dashboard' ? 'text-[#FF6B5A] font-bold' : 'hover:text-white'
+            activeTab === 'my-listing' ? 'text-[#FF6B5A] font-bold' : 'hover:text-white'
           }`}
         >
-          <LayoutDashboard className="w-4 h-4" />
-          <span>Home</span>
+          <Home className="w-4 h-4" />
+          <span>My Listing</span>
         </button>
         <button
           type="button"

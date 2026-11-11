@@ -33,6 +33,7 @@ export interface UserProfile {
   stripeCustomerId?: string;
   activePropertyId?: string;
   hasCompletedOnboarding?: boolean;
+  setupComplete?: boolean;
   createdAt: string;
   updatedAt: string;
 }

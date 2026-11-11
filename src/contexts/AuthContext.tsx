@@ -230,12 +230,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const markOnboardingComplete = async () => {
     if (!currentUser) return;
     try {
+      localStorage.setItem('fsbo_setup_complete', 'true');
       const userRef = doc(db, 'users', currentUser.uid);
       await updateDoc(userRef, {
         hasCompletedOnboarding: true,
+        setupComplete: true,
         updatedAt: new Date().toISOString(),
       });
-      setUserProfile((prev) => (prev ? { ...prev, hasCompletedOnboarding: true } : null));
+      setUserProfile((prev) =>
+        prev ? { ...prev, hasCompletedOnboarding: true, setupComplete: true } : null
+      );
     } catch (err) {
       console.warn('Error marking onboarding complete:', err);
     }
