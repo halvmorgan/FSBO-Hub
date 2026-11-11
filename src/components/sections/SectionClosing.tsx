@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   DocumentItem,
   OfferItem,
@@ -10,6 +10,7 @@ import {
 import { WhyThisMatters } from '../common/WhyThisMatters';
 import { Tooltip } from '../common/Tooltip';
 import { saveDocToDB } from '../../lib/indexedDb';
+import { getStateDisclosureInfo } from '../../lib/stateDisclosures';
 import {
   CheckCircle2,
   FileText,
@@ -26,6 +27,9 @@ import {
   Phone,
   Mail,
   Info,
+  ExternalLink,
+  Edit2,
+  Check,
 } from 'lucide-react';
 
 interface SectionClosingProps {
@@ -51,6 +55,24 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
   onUpdateClosingTeam,
   onNavigate,
 }) => {
+  // Resolve current governing state and state disclosures config
+  const selectedState = property.state || settings.state || 'Michigan';
+  const stateInfo = getStateDisclosureInfo(selectedState);
+
+  // Transfer tax rate state (defaults to state config rate, but editable by user)
+  const defaultTaxRate = stateInfo.transferTaxRatePerThousand ?? 0;
+  const [customTaxRate, setCustomTaxRate] = useState<string>(defaultTaxRate.toString());
+  const [isEditingTaxRate, setIsEditingTaxRate] = useState(false);
+
+  useEffect(() => {
+    setCustomTaxRate((stateInfo.transferTaxRatePerThousand ?? 0).toString());
+  }, [stateInfo.stateCode, stateInfo.transferTaxRatePerThousand]);
+
+  const effectiveTaxRate =
+    !isNaN(parseFloat(customTaxRate)) && parseFloat(customTaxRate) >= 0
+      ? parseFloat(customTaxRate)
+      : defaultTaxRate;
+
   // Offer modal state
   const [showAddOfferModal, setShowAddOfferModal] = useState(false);
   const [buyerName, setBuyerName] = useState('');
@@ -91,26 +113,78 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
       const dataUrl = evt.target?.result as string;
       await saveDocToDB(docId, dataUrl, file.name);
 
-      const updated = documents.map((d) =>
-        d.id === docId
-          ? {
-              ...d,
-              fileName: file.name,
-              uploadDate: new Date().toISOString().split('T')[0],
-              status: 'Uploaded' as const,
-            }
-          : d
-      );
-      onUpdateDocuments(updated);
+      const existingIndex = documents.findIndex((d) => d.id === docId);
+      if (existingIndex >= 0) {
+        const updated = documents.map((d) =>
+          d.id === docId
+            ? {
+                ...d,
+                fileName: file.name,
+                uploadDate: new Date().toISOString().split('T')[0],
+                status: 'Uploaded' as const,
+                completed: true,
+              }
+            : d
+        );
+        onUpdateDocuments(updated);
+      } else {
+        // Document item was not in local array yet, add it
+        const newDoc: DocumentItem = {
+          id: docId,
+          name: docId === 'lead-paint-disclosure'
+            ? 'Lead-Based Paint Disclosure (required for homes built before 1978)'
+            : stateInfo.formName,
+          category: 'Required',
+          required: true,
+          fileName: file.name,
+          uploadDate: new Date().toISOString().split('T')[0],
+          status: 'Uploaded',
+          completed: true,
+          note: stateInfo.summary,
+        };
+        onUpdateDocuments([...documents, newDoc]);
+      }
     };
     reader.readAsDataURL(file);
   };
 
+  // Toggle document completed checkbox
+  const handleToggleDocCompleted = (docId: string) => {
+    const existingIndex = documents.findIndex((d) => d.id === docId);
+    if (existingIndex >= 0) {
+      const updated = documents.map((d) =>
+        d.id === docId
+          ? {
+              ...d,
+              completed: !d.completed,
+              status: !d.completed ? ('Uploaded' as const) : d.fileName ? ('Uploaded' as const) : ('Missing' as const),
+            }
+          : d
+      );
+      onUpdateDocuments(updated);
+    } else {
+      const newDoc: DocumentItem = {
+        id: docId,
+        name: docId === 'lead-paint-disclosure'
+          ? 'Lead-Based Paint Disclosure (required for homes built before 1978)'
+          : stateInfo.formName,
+        category: 'Required',
+        required: true,
+        completed: true,
+        status: 'Uploaded',
+        note: stateInfo.summary,
+      };
+      onUpdateDocuments([...documents, newDoc]);
+    }
+  };
+
   // Calculate Net to Seller for an offer
-  // Net = Price - Concessions - Estimated Title/Transfer Tax (~1.5% in Michigan: transfer tax is $8.60 per $1,000 + title fees)
+  // Net = Price - Concessions - Transfer Tax ($ per $1,000) - Estimated Title/Escrow fees
   const calculateNet = (price: number, concessions: number) => {
-    const miTransferTaxAndTitle = Math.round(price * 0.015);
-    return Math.max(0, price - concessions - miTransferTaxAndTitle);
+    const transferTax = Math.round((price / 1000) * effectiveTaxRate);
+    const estTitleFees = closingTeam.flatFeeQuoted > 0 ? closingTeam.flatFeeQuoted : Math.round(price * 0.005);
+    const totalClosingCosts = transferTax + estTitleFees;
+    return Math.max(0, price - concessions - totalClosingCosts);
   };
 
   const handleAddOffer = (e: React.FormEvent) => {
@@ -119,7 +193,9 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
 
     const price = parseInt(offerPrice) || property.price;
     const concessions = parseInt(sellerConcessions) || 0;
-    const estClosingCosts = Math.round(price * 0.015);
+    const transferTax = Math.round((price / 1000) * effectiveTaxRate);
+    const estTitleFees = closingTeam.flatFeeQuoted > 0 ? closingTeam.flatFeeQuoted : Math.round(price * 0.005);
+    const estClosingCosts = transferTax + estTitleFees;
     const net = calculateNet(price, concessions);
 
     const newOffer: OfferItem = {
@@ -154,12 +230,23 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
     );
   };
 
-  // Filter documents: Lead-paint disclosure shown ONLY if built before 1978!
-  const isBuiltBefore1978 = property.yearBuilt && property.yearBuilt < 1978;
-  const filteredDocuments = documents.filter((d) => {
-    if (d.onlyBefore1978 && !isBuiltBefore1978) return false;
-    return true;
-  });
+  // 1. Federal Lead-Based Paint: shown ONLY if property.yearBuilt < 1978!
+  const isBuiltBefore1978 = Boolean(property.yearBuilt && property.yearBuilt < 1978);
+  const leadPaintDoc = documents.find((d) => d.id === 'lead-paint-disclosure');
+
+  // 2. State-specific seller disclosure item
+  const stateSellerDoc =
+    documents.find((d) => d.id === 'state-seller-disclosure' || d.id === 'mi-seller-disclosure') ||
+    documents.find((d) => d.id.includes('seller-disclosure'));
+
+  // 3. Other supporting documents (survey, tax bills, utilities, warranties)
+  const supportingDocs = documents.filter(
+    (d) =>
+      d.id !== 'lead-paint-disclosure' &&
+      d.id !== 'state-seller-disclosure' &&
+      d.id !== 'mi-seller-disclosure' &&
+      !d.id.includes('seller-disclosure')
+  );
 
   // Identify highest net offer
   const highestNetOffer =
@@ -170,12 +257,12 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
   return (
     <div className="space-y-6">
       <WhyThisMatters
-        tip="Having your disclosures and closing team lined up builds buyer confidence. Once you accept an offer, a Michigan title company or real estate attorney will draft contracts and close escrow safely."
+        tip={`Having your disclosures and closing team lined up builds buyer confidence. Once you accept an offer, a ${stateInfo.stateName} title company or real estate attorney will draft contracts and close escrow safely.`}
         nextLabel="Settings & Backup"
         onNext={() => onNavigate('settings')}
       />
 
-      {/* Prominent Legal Disclaimer as specified */}
+      {/* Prominent Legal Disclaimer */}
       <div className="p-4 rounded-3xl bg-slate-900 text-white border border-slate-700/80 shadow-md flex items-start gap-3.5">
         <ShieldAlert className="w-5 h-5 text-[#F2B544] shrink-0 mt-0.5" />
         <div className="text-xs space-y-1">
@@ -183,53 +270,210 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
             Important Legal & Closing Notice
           </strong>
           <p className="text-slate-300 leading-relaxed">
-            This app gives general information, not legal or tax advice. Use a {settings.state || 'Michigan'} real estate attorney or title company for contracts and closing.
+            This app gives general information, not legal or tax advice. Use a {stateInfo.stateName} real estate attorney or title company for contracts and closing.
           </p>
         </div>
       </div>
 
-      {/* Document Checklist & Upload Slots */}
+      {/* State & Federal Disclosures Checklist */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-slate-100 dark:border-slate-800">
           <div>
             <h3 className="font-heading font-bold text-base text-[#0F2A44] dark:text-white flex items-center gap-2">
               <FileCheck className="w-5 h-5 text-[#FF6B5A]" />
-              Required & Recommended Document Repository
+              State & Federal Disclosure Checklist ({stateInfo.stateName})
             </h3>
             <p className="text-xs text-slate-500">
-              Upload completed disclosure PDFs to hand to serious buyers and title officers.
+              Complete required statutory disclosures and upload executed copies for buyers and escrow officers.
             </p>
           </div>
           <span className="text-xs font-bold text-[#FF6B5A]">
-            {filteredDocuments.filter((d) => d.status === 'Uploaded').length} of {filteredDocuments.length} Uploaded
+            Governing State: {stateInfo.stateName} ({stateInfo.stateCode})
           </span>
         </div>
 
-        <div className="space-y-3">
-          {filteredDocuments.map((doc) => (
+        {/* Required Mandatory Disclaimer Note at Top of Checklist */}
+        <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="leading-relaxed">
+            <strong>Disclosure Notice:</strong> Disclosure rules vary by state and can change. This checklist is general information, not legal advice. Confirm requirements with a local real estate attorney or title company before you sign.
+          </p>
+        </div>
+
+        {/* Disclosures Checklist Items */}
+        <div className="space-y-3.5 pt-1">
+          {/* 1. Federal Lead-Based Paint Disclosure (ONLY shown if property built before 1978) */}
+          {isBuiltBefore1978 ? (
+            <div className="p-4 rounded-2xl border bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1.5 max-w-xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(leadPaintDoc?.completed || leadPaintDoc?.status === 'Uploaded')}
+                      onChange={() => handleToggleDocCompleted('lead-paint-disclosure')}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="font-bold text-xs text-[#0F2A44] dark:text-white">
+                      Lead-Based Paint Disclosure (required for homes built before 1978)
+                    </span>
+                  </label>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                    Federal Requirement (Built {property.yearBuilt})
+                  </span>
+                  {(leadPaintDoc?.completed || leadPaintDoc?.status === 'Uploaded') && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                      ✓ Completed {leadPaintDoc.fileName ? `(${leadPaintDoc.fileName})` : ''}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  Federal law (42 U.S. Code § 4852d) strictly requires sellers of pre-1978 housing to provide buyers with an EPA-approved lead hazard information pamphlet and disclose known lead-based paint.
+                </p>
+                <div className="pt-1">
+                  <a
+                    href="https://www.epa.gov/lead/real-estate-disclosures-about-potential-lead-hazards"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline"
+                  >
+                    <span>Official EPA Lead Disclosure Guide & Pamphlet</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+
+              <div className="shrink-0 flex items-center gap-2">
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] cursor-pointer shadow-sm">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{leadPaintDoc?.status === 'Uploaded' ? 'Replace PDF' : 'Upload PDF'}</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,image/*"
+                    onChange={(e) => handleUploadDocument('lead-paint-disclosure', e)}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 flex items-center justify-between">
+              <span>
+                Federal Lead-Based Paint Disclosure: <strong>Exempt</strong> (Home built in {property.yearBuilt || 'post-1978'}, lead disclosure only required for pre-1978 construction).
+              </span>
+            </div>
+          )}
+
+          {/* 2. State-Specific Seller Disclosure */}
+          <div
+            className={`p-4 rounded-2xl border transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+              stateSellerDoc?.completed || stateSellerDoc?.status === 'Uploaded'
+                ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+                : stateInfo.ruleType === 'mandatory'
+                ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800'
+                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60'
+            }`}
+          >
+            <div className="space-y-1.5 max-w-xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(stateSellerDoc?.completed || stateSellerDoc?.status === 'Uploaded')}
+                    onChange={() => handleToggleDocCompleted(stateSellerDoc?.id || 'state-seller-disclosure')}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span className="font-bold text-xs text-[#0F2A44] dark:text-white">
+                    {stateInfo.formName}
+                  </span>
+                </label>
+
+                {stateInfo.ruleType === 'mandatory' && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                    Required by State Law
+                  </span>
+                )}
+                {stateInfo.ruleType === 'caveat_emptor' && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                    Buyer Beware State (Caveat Emptor)
+                  </span>
+                )}
+                {stateInfo.ruleType === 'conditional' && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    Conditional State Requirement
+                  </span>
+                )}
+                {(stateSellerDoc?.completed || stateSellerDoc?.status === 'Uploaded') && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                    ✓ Completed {stateSellerDoc.fileName ? `(${stateSellerDoc.fileName})` : ''}
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                {stateInfo.summary}
+              </p>
+
+              {/* Official Source Link or Review Flag */}
+              <div className="pt-1">
+                {stateInfo.needsReview ? (
+                  <div className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                    Note: Check with a local real estate attorney or title company for {stateInfo.stateName}'s disclosure form.
+                  </div>
+                ) : stateInfo.officialSourceUrl ? (
+                  <a
+                    href={stateInfo.officialSourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline"
+                  >
+                    <span>Official {stateInfo.officialAgencyName} Source</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="shrink-0 flex items-center gap-2">
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] cursor-pointer shadow-sm">
+                <Upload className="w-3.5 h-3.5" />
+                <span>{stateSellerDoc?.status === 'Uploaded' ? 'Replace PDF' : 'Upload PDF'}</span>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,image/*"
+                  onChange={(e) => handleUploadDocument(stateSellerDoc?.id || 'state-seller-disclosure', e)}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* 3. Supporting Records (Survey, Tax Bills, Utilities, Warranties) */}
+          {supportingDocs.map((doc) => (
             <div
               key={doc.id}
-              className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-                doc.status === 'Uploaded'
-                  ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
-                  : doc.required
-                  ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800'
-                  : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60'
+              className={`p-3.5 rounded-2xl border transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-3 ${
+                doc.completed || doc.status === 'Uploaded'
+                  ? 'bg-emerald-50/30 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-800'
+                  : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/60'
               }`}
             >
               <div className="space-y-1 max-w-xl">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-xs text-[#0F2A44] dark:text-white">
-                    {doc.name}
-                  </span>
-                  {doc.required && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                      Required by Law
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(doc.completed || doc.status === 'Uploaded')}
+                      onChange={() => handleToggleDocCompleted(doc.id)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="font-bold text-xs text-[#0F2A44] dark:text-white">
+                      {doc.name}
                     </span>
-                  )}
-                  {doc.status === 'Uploaded' && (
+                  </label>
+                  {(doc.completed || doc.status === 'Uploaded') && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      ✓ Uploaded ({doc.fileName})
+                      ✓ Completed {doc.fileName ? `(${doc.fileName})` : ''}
                     </span>
                   )}
                 </div>
@@ -237,9 +481,9 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
               </div>
 
               <div className="shrink-0 flex items-center gap-2">
-                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] cursor-pointer shadow-sm">
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 cursor-pointer shadow-sm">
                   <Upload className="w-3.5 h-3.5" />
-                  <span>{doc.status === 'Uploaded' ? 'Replace PDF' : 'Upload PDF'}</span>
+                  <span>{doc.status === 'Uploaded' ? 'Replace' : 'Upload'}</span>
                   <input
                     type="file"
                     accept=".pdf,.doc,.docx,image/*"
@@ -262,7 +506,7 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
               Side-by-Side Offer Comparison & <Tooltip term="Net to Seller" /> Calculator
             </h3>
             <p className="text-xs text-slate-500">
-              Compare purchase price minus buyer concessions and transfer taxes to evaluate true take-home proceeds.
+              Compare purchase price minus buyer concessions, title fees, and state transfer taxes to evaluate take-home proceeds.
             </p>
           </div>
           <button
@@ -273,6 +517,58 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
             <Plus className="w-3.5 h-3.5" />
             + Enter New Offer
           </button>
+        </div>
+
+        {/* Transfer Tax Rate Configuration Banner */}
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="space-y-0.5">
+            <span className="font-bold text-[#0F2A44] dark:text-white flex items-center gap-1.5">
+              <span>Transfer Tax Rate:</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">
+                ${effectiveTaxRate.toFixed(2)} per $1,000
+              </span>
+              <span className="text-[10px] text-slate-400 font-normal">
+                ({((effectiveTaxRate / 1000) * 100).toFixed(3)}%)
+              </span>
+            </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Transfer taxes vary by county and state. Default for {stateInfo.stateName}: {stateInfo.transferTaxNote}.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isEditingTaxRate ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400">$</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={customTaxRate}
+                  onChange={(e) => setCustomTaxRate(e.target.value)}
+                  className="w-20 px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold focus:outline-none"
+                />
+                <span className="text-slate-400 text-[10px]">/ $1k</span>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingTaxRate(false)}
+                  className="p-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                  title="Save Rate"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditingTaxRate(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50"
+              >
+                <Edit2 className="w-3 h-3 text-slate-400" />
+                <span>Adjust Tax Rate</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {offers.length === 0 ? (
@@ -381,7 +677,7 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
               Closing Team Tracker (Real Estate Attorney & Title Company)
             </h3>
             <p className="text-xs text-slate-500">
-              A Michigan real estate attorney or title company prepares the standard purchase agreement, coordinates escrow, runs title work, and oversees closing.
+              A {stateInfo.stateName} real estate attorney or title company prepares the standard purchase agreement, coordinates escrow, runs title work, and oversees closing.
             </p>
           </div>
         </div>
@@ -393,7 +689,7 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
               type="text"
               value={closingTeam.attorneyOrTitle}
               onChange={(e) => onUpdateClosingTeam({ ...closingTeam, attorneyOrTitle: e.target.value })}
-              placeholder="e.g. First American Title or Local Attorney"
+              placeholder={`e.g. First American Title or ${stateInfo.stateName} Attorney`}
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none"
             />
           </div>
@@ -413,7 +709,7 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
               type="text"
               value={`${closingTeam.phone} • ${closingTeam.email}`}
               onChange={(e) => onUpdateClosingTeam({ ...closingTeam, phone: e.target.value })}
-              placeholder="(248) 555-0199 • title@firstam.com"
+              placeholder="(555) 555-0199 • title@escrow.com"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none"
             />
           </div>
@@ -554,6 +850,10 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none"
                   />
                 </div>
+              </div>
+
+              <div className="text-[11px] text-slate-500 bg-slate-50 dark:bg-slate-800 p-2.5 rounded-xl">
+                Estimated Closing Costs: Transfer Tax ({stateInfo.stateName}: ${effectiveTaxRate.toFixed(2)}/k) + Title/Escrow = ~${(Math.round(((parseInt(offerPrice) || property.price) / 1000) * effectiveTaxRate) + (closingTeam.flatFeeQuoted || Math.round((parseInt(offerPrice) || property.price) * 0.005))).toLocaleString()}
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

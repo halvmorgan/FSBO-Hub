@@ -129,7 +129,7 @@ export const SectionDashboard: React.FC<SectionDashboardProps> = ({
   }
   if (nextSteps.length < 3) {
     nextSteps.push({
-      title: 'Review Michigan Seller’s Disclosure',
+      title: `Review ${property.state || 'State'} Seller’s Disclosure`,
       desc: 'Have your completed disclosure ready to hand to serious buyers who tour.',
       tab: 'closing',
       icon: CheckCircle2,

@@ -38,7 +38,7 @@ const FAQS = [
       'When an offer is submitted, enter the key figures into the Offers & Net Sheet tool in the Documents & Closing tab. Review the purchase price, earnest money deposit (typically 1% to 3%), financing contingencies, inspection deadlines (usually 7 to 10 days), and requested closing date before signing or countering.',
   },
   {
-    question: 'What closing team members do I need in Michigan or my state?',
+    question: 'What closing team members do I need in my state?',
     answer:
       'A licensed title company or real estate attorney will act as the neutral escrow agent. They conduct title searches, draft the deed, hold earnest money in an insured escrow account, prepare the HUD-1 / ALTA settlement statement, and coordinate the final signing and recording of the deed.',
   },

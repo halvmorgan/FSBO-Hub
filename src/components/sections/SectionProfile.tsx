@@ -15,6 +15,7 @@ import {
   Sparkles,
   Info,
 } from 'lucide-react';
+import { US_STATES, detectStateFromAddress } from '../../lib/stateDisclosures';
 
 interface SectionProfileProps {
   property: PropertyProfile;
@@ -209,12 +210,65 @@ export const SectionProfile: React.FC<SectionProfileProps> = ({
 
           <div className="col-span-2 sm:col-span-3">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Street Address & City
+              Street Address
             </label>
             <input
               type="text"
-              value={`${property.address}, ${property.city}, ${property.state} ${property.zip}`}
-              onChange={(e) => handleFieldChange('address', e.target.value)}
+              value={property.address}
+              onChange={(e) => {
+                const newAddr = e.target.value;
+                const detected = detectStateFromAddress(newAddr);
+                if (detected && detected !== property.state) {
+                  onChange({ ...property, address: newAddr, state: detected });
+                } else {
+                  handleFieldChange('address', newAddr);
+                }
+              }}
+              placeholder="e.g. 4288 Meadowview Drive"
+              className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
+            />
+          </div>
+
+          <div className="col-span-1 sm:col-span-1">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              City
+            </label>
+            <input
+              type="text"
+              value={property.city}
+              onChange={(e) => handleFieldChange('city', e.target.value)}
+              placeholder="e.g. Rochester Hills"
+              className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
+            />
+          </div>
+
+          <div className="col-span-1 sm:col-span-1">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Property State <span className="text-red-500">*</span>
+            </label>
+            <select
+              required
+              value={property.state || 'Michigan'}
+              onChange={(e) => handleFieldChange('state', e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-[#0F2A44] dark:text-white focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
+            >
+              {US_STATES.map((st) => (
+                <option key={st.code} value={st.name}>
+                  {st.name} ({st.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="col-span-1 sm:col-span-1">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Zip Code
+            </label>
+            <input
+              type="text"
+              value={property.zip}
+              onChange={(e) => handleFieldChange('zip', e.target.value)}
+              placeholder="e.g. 48306"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>

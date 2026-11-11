@@ -469,7 +469,7 @@ export const SectionPricing: React.FC<SectionPricingProps> = ({
         <div className="p-5 rounded-3xl bg-gradient-to-br from-[#1E6F80] to-[#0F2A44] text-white space-y-2 shadow-md">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
-              Licensed Michigan Appraisal
+              Licensed Independent Appraisal
             </span>
             <DollarSign className="w-4 h-4 text-emerald-300" />
           </div>

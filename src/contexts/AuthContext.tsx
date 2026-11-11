@@ -61,6 +61,9 @@ interface AuthContextType {
   dismissLocalImportPrompt: () => void;
   markNotificationRead: (id: string) => Promise<void>;
   updateSaasConfig: (newConfig: Partial<SaasConfig>) => Promise<void>;
+  loadError: string | null;
+  retryLoad: () => Promise<void>;
+  markOnboardingComplete: () => Promise<void>;
   grantUserPlan: (uid: string, plan: PlanType, status?: string) => Promise<void>;
   deleteUserAccount: () => Promise<void>;
   deductCreditClient: (cost?: number) => void;
@@ -145,79 +148,109 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadConfigOnce();
   }, []);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const fetchUserProfile = async (fbUser: FirebaseUser) => {
+    const userRef = doc(db, 'users', fbUser.uid);
+    try {
+      setLoadError(null);
+      incrementFirestoreReadCount(`users/${fbUser.uid}`, 1);
+      const userSnap = await getDoc(userRef);
+
+      const isAdminEmail = fbUser.email?.toLowerCase() === 'halvmorgan@gmail.com';
+
+      if (!userSnap.exists()) {
+        const trialEnd = new Date(Date.now() + 7 * 86400000).toISOString();
+        const newProfile: UserProfile = {
+          uid: fbUser.uid,
+          email: fbUser.email || '',
+          displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'Seller',
+          photoURL: fbUser.photoURL || undefined,
+          role: isAdminEmail ? 'admin' : 'user',
+          plan: 'trial',
+          planStatus: 'trialing',
+          trialEndsAt: trialEnd,
+          aiCreditsUsed: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        await setDoc(userRef, newProfile);
+        setUserProfile(newProfile);
+
+        // Seed initial property
+        const initialProp: PropertyProfile = {
+          ...DEFAULT_PROPERTY,
+          address: '4288 Meadowview Drive',
+        };
+        const propRef = doc(collection(db, 'users', fbUser.uid, 'properties'));
+        await setDoc(propRef, { ...initialProp, id: propRef.id, ownerUid: fbUser.uid });
+        await updateDoc(userRef, { activePropertyId: propRef.id });
+
+        // Create Welcome Notification
+        const notifRef = doc(collection(db, 'notifications'));
+        await setDoc(notifRef, {
+          id: notifRef.id,
+          uid: fbUser.uid,
+          title: 'Welcome to FSBO Compass!',
+          message: 'Your 7-day Free Trial is active. Start by customizing your property facts and uploading photos.',
+          type: 'system',
+          read: false,
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        const data = userSnap.data() as UserProfile;
+        if (isAdminEmail && data.role !== 'admin') {
+          await updateDoc(userRef, { role: 'admin' });
+          data.role = 'admin';
+        }
+        setUserProfile(data);
+        if (data.activePropertyId) {
+          setActivePropertyIdState(data.activePropertyId);
+        }
+      }
+    } catch (err: any) {
+      console.warn('Failed to load user profile:', err);
+      setLoadError('Failed to load your property and account info. Please check your connection and try again.');
+      handleFirestoreError(err, OperationType.GET, `users/${fbUser.uid}`);
+    }
+  };
+
+  const retryLoad = async () => {
+    if (auth.currentUser) {
+      setLoading(true);
+      await fetchUserProfile(auth.currentUser);
+      setLoading(false);
+    }
+  };
+
+  const markOnboardingComplete = async () => {
+    if (!currentUser) return;
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userRef, {
+        hasCompletedOnboarding: true,
+        updatedAt: new Date().toISOString(),
+      });
+      setUserProfile((prev) => (prev ? { ...prev, hasCompletedOnboarding: true } : null));
+    } catch (err) {
+      console.warn('Error marking onboarding complete:', err);
+    }
+  };
+
   // 3. Auth State Observer
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setCurrentUser(fbUser);
 
       if (fbUser) {
-        const userRef = doc(db, 'users', fbUser.uid);
-        try {
-          incrementFirestoreReadCount(`users/${fbUser.uid}`, 1);
-          const userSnap = await getDoc(userRef);
-
-          // Bootstrap admin rule: if email matches halvmorgan@gmail.com, auto-assign admin role!
-          const isAdminEmail = fbUser.email?.toLowerCase() === 'halvmorgan@gmail.com';
-
-          if (!userSnap.exists()) {
-            const trialEnd = new Date(Date.now() + 7 * 86400000).toISOString();
-            const newProfile: UserProfile = {
-              uid: fbUser.uid,
-              email: fbUser.email || '',
-              displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'Seller',
-              photoURL: fbUser.photoURL || undefined,
-              role: isAdminEmail ? 'admin' : 'user',
-              plan: 'trial',
-              planStatus: 'trialing',
-              trialEndsAt: trialEnd,
-              aiCreditsUsed: 0,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-
-            await setDoc(userRef, newProfile);
-            setUserProfile(newProfile);
-
-            // Seed initial property
-            const initialProp: PropertyProfile = {
-              ...DEFAULT_PROPERTY,
-              address: '4288 Meadowview Drive',
-            };
-            const propRef = doc(collection(db, 'users', fbUser.uid, 'properties'));
-            await setDoc(propRef, { ...initialProp, id: propRef.id, ownerUid: fbUser.uid });
-            await updateDoc(userRef, { activePropertyId: propRef.id });
-
-            // Create Welcome Notification
-            const notifRef = doc(collection(db, 'notifications'));
-            await setDoc(notifRef, {
-              id: notifRef.id,
-              uid: fbUser.uid,
-              title: 'Welcome to FSBO Compass!',
-              message: 'Your 7-day Free Trial is active. Start by customizing your property facts and uploading photos.',
-              type: 'system',
-              read: false,
-              createdAt: new Date().toISOString(),
-            });
-          } else {
-            const data = userSnap.data() as UserProfile;
-            // Ensure admin email is always recognized as admin
-            if (isAdminEmail && data.role !== 'admin') {
-              await updateDoc(userRef, { role: 'admin' });
-              data.role = 'admin';
-            }
-            setUserProfile(data);
-            if (data.activePropertyId) {
-              setActivePropertyIdState(data.activePropertyId);
-            }
-          }
-        } catch (err) {
-          handleFirestoreError(err, OperationType.GET, `users/${fbUser.uid}`);
-        }
+        await fetchUserProfile(fbUser);
       } else {
         setUserProfile(null);
         setUserProperties([]);
         setActivePropertyIdState(null);
         setNotifications([]);
+        setLoadError(null);
       }
 
       setLoading(false);
@@ -478,6 +511,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         dismissLocalImportPrompt,
         markNotificationRead,
         updateSaasConfig,
+        loadError,
+        retryLoad,
+        markOnboardingComplete,
         grantUserPlan,
         deleteUserAccount,
         deductCreditClient,

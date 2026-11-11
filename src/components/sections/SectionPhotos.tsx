@@ -670,7 +670,7 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
             Thinking about hiring a real estate photographer?
           </h4>
           <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-            In Michigan and most states, professional real estate photographers charge roughly $150 to $300 for 25 high-dynamic-range (HDR) photos including drone aerials. Because you are saving $10,000+ on listing agent commissions, spending $200 on crisp photography is the single highest-ROI marketing investment you can make. Ask for "MLS-ready high resolution digital files with copyright release".
+            Across most real estate markets, professional real estate photographers charge roughly $150 to $300 for 25 high-dynamic-range (HDR) photos including drone aerials. Because you are saving $10,000+ on listing agent commissions, spending $200 on crisp photography is the single highest-ROI marketing investment you can make. Ask for "MLS-ready high resolution digital files with copyright release".
           </p>
         </div>
       </div>

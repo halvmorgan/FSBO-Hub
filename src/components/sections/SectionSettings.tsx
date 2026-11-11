@@ -28,16 +28,7 @@ interface SectionSettingsProps {
   onNavigate: (tab: ActiveTab) => void;
 }
 
-const US_STATES = [
-  'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut',
-  'Delaware', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa',
-  'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan',
-  'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire',
-  'New Jersey', 'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio',
-  'Oklahoma', 'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota',
-  'Tennessee', 'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia',
-  'Wisconsin', 'Wyoming'
-];
+import { US_STATES } from '../../lib/stateDisclosures';
 
 export const SectionSettings: React.FC<SectionSettingsProps> = ({
   settings,
@@ -112,7 +103,7 @@ export const SectionSettings: React.FC<SectionSettingsProps> = ({
   return (
     <div className="space-y-6">
       <WhyThisMatters
-        tip="Your settings power automated showing notifications, disclosure laws (Michigan by default), and backup exports so your hard work is never lost."
+        tip={`Your settings power automated showing notifications, disclosure laws (${settings.state || property.state || 'your state'}), and backup exports so your hard work is never lost.`}
         nextLabel="Return to Dashboard"
         onNext={() => onNavigate('dashboard')}
       />
@@ -179,10 +170,10 @@ export const SectionSettings: React.FC<SectionSettingsProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Governing State (Default: Michigan)
+              Governing State
             </label>
             <select
-              value={settings.state}
+              value={settings.state || property.state || 'Michigan'}
               onChange={(e) => {
                 handleFieldChange('state', e.target.value);
                 handlePropertyFieldChange('state', e.target.value);
@@ -190,8 +181,8 @@ export const SectionSettings: React.FC<SectionSettingsProps> = ({
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             >
               {US_STATES.map((st) => (
-                <option key={st} value={st}>
-                  {st} {st === 'Michigan' ? '(Default)' : ''}
+                <option key={st.code} value={st.name}>
+                  {st.name} ({st.code})
                 </option>
               ))}
             </select>

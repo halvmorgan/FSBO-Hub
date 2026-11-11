@@ -32,6 +32,7 @@ export interface UserProfile {
   aiCreditsUsed: number;
   stripeCustomerId?: string;
   activePropertyId?: string;
+  hasCompletedOnboarding?: boolean;
   createdAt: string;
   updatedAt: string;
 }

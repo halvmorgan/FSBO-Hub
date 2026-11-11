@@ -191,6 +191,8 @@ export interface DocumentItem {
   uploadDate?: string;
   status: 'Missing' | 'Uploaded' | 'Exempt';
   note: string;
+  completed?: boolean;
+  officialSourceUrl?: string;
 }
 
 export interface OfferItem {

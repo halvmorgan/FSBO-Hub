@@ -169,8 +169,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Brand Header */}
         <div className="p-5 border-b border-[#1E4268]/40">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center text-white font-bold shadow-md shadow-[#FF6B5A]/20">
+            <button
+              type="button"
+              onClick={() => handleSelectTab('dashboard')}
+              className="flex items-center gap-2.5 text-left hover:opacity-90 transition-opacity focus:outline-none"
+              title="FSBO Compass - Go to My Home Dashboard"
+            >
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center text-white font-bold shadow-md shadow-[#FF6B5A]/20 shrink-0">
                 <Compass className="w-5 h-5 text-white" />
               </div>
               <div>
@@ -179,7 +184,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </h1>
                 <p className="text-[10px] text-slate-300 font-medium leading-tight">Your step-by-step guide to selling your home without an agent.</p>
               </div>
-            </div>
+            </button>
 
             {/* Plan Badge */}
             <button
@@ -390,14 +395,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Mobile Top Bar */}
       <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-2.5 bg-[#0F2A44] text-white shadow-md font-sans">
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => handleSelectTab('dashboard')}
+          className="flex items-center gap-2 text-left focus:outline-none hover:opacity-90 transition-opacity"
+          title="FSBO Compass - Go to My Home Dashboard"
+        >
           <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center text-white font-bold">
             <Compass className="w-4 h-4 text-white" />
           </div>
           <span className="font-heading font-extrabold text-sm text-white">
             FSBO <span className="text-[#FF6B5A]">Compass</span>
           </span>
-        </div>
+        </button>
 
         <div className="flex items-center gap-2">
           <button

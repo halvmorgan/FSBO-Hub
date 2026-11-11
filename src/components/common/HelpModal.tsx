@@ -108,7 +108,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                 type="text"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                placeholder="e.g. Question about Michigan Seller Disclosures"
+                placeholder="e.g. Question about Seller Disclosures or closing"
                 className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-xs sm:text-sm text-[#0F2A44] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF6B5A]/40"
               />
             </div>

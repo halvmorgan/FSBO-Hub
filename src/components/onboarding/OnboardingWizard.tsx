@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { PropertyProfile, PhotoItem } from '../../types';
 import { MapPin, Camera, Home, Compass, Calendar, ArrowRight, ArrowLeft, Check, Sparkles, Upload } from 'lucide-react';
 import { savePhotoToDB } from '../../lib/indexedDb';
+import { US_STATES, detectStateFromAddress } from '../../lib/stateDisclosures';
 
 interface OnboardingWizardProps {
   property: PropertyProfile;
@@ -106,7 +107,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                   <input
                     type="text"
                     value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    onChange={(e) => {
+                      const newAddr = e.target.value;
+                      const detected = detectStateFromAddress(newAddr);
+                      if (detected && detected !== formData.state) {
+                        setFormData({ ...formData, address: newAddr, state: detected });
+                      } else {
+                        setFormData({ ...formData, address: newAddr });
+                      }
+                    }}
                     placeholder="e.g. 4288 Meadowview Drive"
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
                   />
@@ -127,15 +136,20 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      State
+                      Property State <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="text"
-                      value={formData.state}
+                    <select
+                      required
+                      value={formData.state || 'Michigan'}
                       onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                      placeholder="Michigan"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
-                    />
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-[#0F2A44] dark:text-white focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
+                    >
+                      {US_STATES.map((st) => (
+                        <option key={st.code} value={st.name}>
+                          {st.name} ({st.code})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">

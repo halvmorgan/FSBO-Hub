@@ -53,7 +53,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     },
     {
       q: 'What about legal contracts, disclosures, and closing?',
-      a: 'We provide state-specific disclosure checklists (such as the mandatory Michigan Seller’s Disclosure) and a closing tracker so you can work seamlessly with a local title company or real estate attorney to handle escrow and closing.',
+      a: 'We provide 50-state disclosure checklists (including statutory seller disclosures and federal lead-based paint requirements) and a closing tracker so you can work seamlessly with a local title company or real estate attorney to handle escrow and closing.',
     },
     {
       q: 'What is the Fair Housing guardrail?',
@@ -157,7 +157,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Fair Housing guardrail built in
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Michigan & 50-state disclosures
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" /> 50-state disclosure checklists
             </span>
           </div>
         </div>
@@ -288,7 +288,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <ShieldCheck className="w-5 h-5 text-emerald-600" />
               <h4 className="font-bold text-sm text-[#0F2A44] dark:text-white">Disclosures Repository</h4>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Michigan Seller's Disclosure, Lead-Based Paint (for pre-1978 homes), and warranty document slots.
+                Official 50-state seller disclosures, Federal Lead-Based Paint (for pre-1978 homes), and warranty document slots.
               </p>
             </div>
 

@@ -291,12 +291,12 @@ export const DEFAULT_SITES: ListingSiteItem[] = [
 
 export const DEFAULT_DOCUMENTS: DocumentItem[] = [
   {
-    id: 'mi-seller-disclosure',
-    name: "Michigan Seller's Disclosure Statement",
+    id: 'state-seller-disclosure',
+    name: "State Statutory Seller's Property Disclosure",
     category: 'Required',
     required: true,
     status: 'Missing',
-    note: 'Required by Michigan Public Act 92 of 1993 for almost all 1-4 unit residential sales. Complete all checkboxes honestly before accepting an offer.',
+    note: 'Mandatory or standard seller property disclosure document for your property state. Complete all questions honestly before accepting an offer.',
   },
   {
     id: 'lead-paint-disclosure',
@@ -384,9 +384,9 @@ export const DEFAULT_PROMOTE_GROUPS: PromoteGroup[] = [
   },
   {
     id: 'g4',
-    name: 'Michigan Relocation & Moving Network',
+    name: 'Statewide Relocation & Moving Network',
     platform: 'Facebook Group',
-    url: 'https://facebook.com/groups/michiganrelocation',
+    url: 'https://facebook.com/groups/relocationnetwork',
     posted: false,
   },
 ];

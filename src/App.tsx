@@ -62,7 +62,7 @@ import { SectionClosing } from './components/sections/SectionClosing';
 import { SectionSettings } from './components/sections/SectionSettings';
 import { SectionHelp } from './components/sections/SectionHelp';
 
-import { CloudUpload, X, HelpCircle } from 'lucide-react';
+import { CloudUpload, X, HelpCircle, Compass, AlertTriangle } from 'lucide-react';
 import { PlanType } from './types/saas';
 
 import houseExteriorFront from './assets/images/house_exterior_front_1794286496562.jpg';
@@ -123,6 +123,9 @@ function AppContent() {
     currentUser,
     userProfile,
     loading: authLoading,
+    loadError,
+    retryLoad,
+    markOnboardingComplete,
     saasConfig,
     activeProperty,
     updateCurrentProperty,
@@ -370,7 +373,7 @@ function AppContent() {
           phone: '(248) 555-8820',
           email: 'kthompson@transnationtitle.com',
           flatFeeQuoted: 750,
-          notes: 'Will draft standard Michigan purchase agreement, hold earnest money in escrow, and coordinate closing.',
+          notes: 'Will draft standard state purchase agreement, hold earnest money in escrow, and coordinate closing.',
         };
   });
 
@@ -410,6 +413,7 @@ function AppContent() {
           setCurrentView('landing');
         } else {
           setCurrentView('app');
+          setActiveTab('dashboard');
         }
       }
     };
@@ -418,6 +422,19 @@ function AppContent() {
     window.addEventListener('popstate', handleUrlRouting);
     return () => window.removeEventListener('popstate', handleUrlRouting);
   }, [currentUser, demoMode]);
+
+  // Check whether signed-in user has filled in their personalized home details / onboarding info
+  const hasFilledInfo = Boolean(
+    userProfile?.hasCompletedOnboarding ||
+    (property.address && property.address !== '4288 Meadowview Drive' && property.price > 0)
+  );
+
+  // If a signed-in user hasn't filled in their info yet, prompt the onboarding wizard immediately
+  useEffect(() => {
+    if (currentUser && !authLoading && !hasFilledInfo) {
+      setShowWizard(true);
+    }
+  }, [currentUser, authLoading, hasFilledInfo]);
 
   // Sync activeProperty from Cloud into state
   useEffect(() => {
@@ -744,7 +761,48 @@ function AppContent() {
     );
   }
 
-  // 5. Render Public Marketing Landing Page (if guest & not demo mode)
+  // 5. Loading State: While Firebase Auth or Firestore user is initializing, show clean spinner (never flash marketing page)
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 flex flex-col items-center justify-center p-6 text-center font-sans">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center text-white shadow-lg shadow-[#FF6B5A]/20 mb-4 animate-pulse">
+          <Compass className="w-7 h-7 animate-spin" style={{ animationDuration: '3s' }} />
+        </div>
+        <h3 className="font-heading font-bold text-base text-[#0F2A44] dark:text-white">
+          Loading your property...
+        </h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          FSBO Compass
+        </p>
+      </div>
+    );
+  }
+
+  // 6. Error State: If loading user information from Firestore failed, show friendly error with Try Again button
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 flex flex-col items-center justify-center p-6 text-center font-sans">
+        <div className="w-14 h-14 rounded-2xl bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center mb-4 shadow-sm">
+          <AlertTriangle className="w-7 h-7" />
+        </div>
+        <h3 className="font-heading font-bold text-lg text-[#0F2A44] dark:text-white mb-1">
+          Couldn't load your property information
+        </h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mb-5 leading-relaxed">
+          {loadError}
+        </p>
+        <button
+          type="button"
+          onClick={() => retryLoad()}
+          className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] shadow-sm transition-all"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  // 7. Render Public Marketing Landing Page (if guest & not demo mode)
   if (!currentUser && !demoMode) {
     return (
       <>
@@ -808,9 +866,20 @@ function AppContent() {
         {/* Top App Bar */}
         <header className="sticky top-0 z-10 bg-white/90 dark:bg-stone-900/90 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-heading font-extrabold text-sm text-[#0F2A44] dark:text-white hidden sm:inline-block">
-              {property.address || 'My FSBO Listing'}
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                window.history.pushState({}, '', '/');
+                setActiveTab('dashboard');
+                setCurrentView('app');
+              }}
+              className="text-left flex items-center gap-2 hover:opacity-80 transition-opacity focus:outline-none"
+              title="Go to Home Dashboard"
+            >
+              <span className="font-heading font-extrabold text-sm text-[#0F2A44] dark:text-white hidden sm:inline-block">
+                {property.address || 'My FSBO Listing'}
+              </span>
+            </button>
             {userProfile?.plan === 'trial' && (
               <button
                 onClick={() => {
@@ -1086,11 +1155,13 @@ function AppContent() {
         <OnboardingWizard
           property={property}
           photos={photos}
-          onComplete={(updatedProp, updatedPhotos) => {
-            handleUpdateProperty(updatedProp);
+          onComplete={async (updatedProp, updatedPhotos) => {
+            await handleUpdateProperty(updatedProp);
             setPhotos(updatedPhotos);
             setShowWizard(false);
+            await markOnboardingComplete();
             setActiveTab('dashboard');
+            setCurrentView('app');
           }}
           onClose={() => setShowWizard(false)}
         />
