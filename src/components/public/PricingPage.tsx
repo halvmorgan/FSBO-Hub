@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { SaasConfig, PlanType } from '../../types/saas';
 import {
   Check,
+  X,
   Home,
+  Compass,
   Lock,
   Sparkles,
 } from 'lucide-react';
@@ -24,6 +26,23 @@ export const PricingPage: React.FC<PricingPageProps> = ({
 }) => {
   const plans = saasConfig.plans;
 
+  useEffect(() => {
+    const scrollToCompare = () => {
+      if (typeof window !== 'undefined' && window.location.hash === '#compare') {
+        const el = document.getElementById('compare');
+        if (el) {
+          setTimeout(() => {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 150);
+        }
+      }
+    };
+
+    scrollToCompare();
+    window.addEventListener('hashchange', scrollToCompare);
+    return () => window.removeEventListener('hashchange', scrollToCompare);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100 flex flex-col font-sans">
       {/* Top Header */}
@@ -35,13 +54,13 @@ export const PricingPage: React.FC<PricingPageProps> = ({
             className="flex items-center gap-2.5 group text-left"
           >
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center font-bold text-white shadow-md">
-              <Home className="w-4 h-4 text-white" />
+              <Compass className="w-4 h-4 text-white" />
             </div>
             <div>
               <span className="font-heading font-extrabold text-sm text-white">
-                FSBO <span className="text-[#FF6B5A]">Command Center</span>
+                FSBO <span className="text-[#FF6B5A]">Compass</span>
               </span>
-              <span className="block text-[10px] text-slate-300">Simple, Transparent Pricing</span>
+              <span className="block text-[10px] text-slate-300">Your step-by-step guide to selling your home without an agent.</span>
             </div>
           </button>
 
@@ -292,6 +311,265 @@ export const PricingPage: React.FC<PricingPageProps> = ({
             </div>
           )}
         </div>
+
+        {/* Compare Plans Section */}
+        <section id="compare" className="pt-10 scroll-mt-12 space-y-6">
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl sm:text-3xl font-black font-heading text-[#0F2A44] dark:text-white">
+              Compare Plans
+            </h2>
+            <p className="text-sm text-stone-600 dark:text-stone-400">
+              See exactly what's included in each plan.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto rounded-3xl border border-stone-200/90 dark:border-stone-800 shadow-sm bg-white dark:bg-stone-900">
+            <table className="w-full min-w-[620px] text-left border-collapse">
+              <thead>
+                <tr className="border-b border-stone-200 dark:border-stone-800 text-xs">
+                  <th scope="col" className="p-4 sm:p-5 font-bold uppercase tracking-wider text-stone-500 sticky left-0 z-20 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)] min-w-[200px]">
+                    Feature
+                  </th>
+                  <th scope="col" className="p-4 sm:p-5 font-bold text-center text-[#0F2A44] dark:text-white w-1/4">
+                    <span className="block text-base font-extrabold">{plans.per_listing?.name || 'Per Listing'}</span>
+                    <span className="text-[11px] font-medium text-stone-500">
+                      {plans.per_listing?.priceDisplay || '$149'} one time
+                    </span>
+                  </th>
+                  <th scope="col" className="p-4 sm:p-5 font-bold text-center text-[#0F2A44] dark:text-white w-1/4 bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50 relative">
+                    <div className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-full mb-1">
+                      <Sparkles className="w-2.5 h-2.5" /> Best Value
+                    </div>
+                    <span className="block text-base font-extrabold">{plans.bundle?.name || 'Bundle'}</span>
+                    <span className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                      {plans.bundle?.priceDisplay || '$197'} one time
+                    </span>
+                  </th>
+                  <th scope="col" className="p-4 sm:p-5 font-bold text-center text-[#0F2A44] dark:text-white w-1/4">
+                    <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded-full mb-1">
+                      Up to 3 homes
+                    </span>
+                    <span className="block text-base font-extrabold">{plans.pro?.name || 'Pro Monthly'}</span>
+                    <span className="text-[11px] font-medium text-stone-500">
+                      ${plans.pro?.priceAmount || 29} a month
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100 dark:divide-stone-800 text-xs sm:text-sm">
+                {/* Row 1: Price */}
+                <tr className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <td className="p-4 sm:p-5 font-semibold text-[#0F2A44] dark:text-white sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                    Price
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-700 dark:text-stone-300">
+                    {plans.per_listing?.priceDisplay || '$149'} one time
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-900 dark:text-stone-100 bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    {plans.bundle?.priceDisplay || '$197'} one time
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-700 dark:text-stone-300">
+                    ${plans.pro?.priceAmount || 29} a month
+                  </td>
+                </tr>
+
+                {/* Row 2: How long */}
+                <tr className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <td className="p-4 sm:p-5 font-semibold text-[#0F2A44] dark:text-white sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                    How long
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-700 dark:text-stone-300">
+                    {plans.per_listing?.billingPeriod || '6 months'}
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-900 dark:text-stone-100 bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    {plans.bundle?.billingPeriod || '6 months'}
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-700 dark:text-stone-300">
+                    As long as you're subscribed
+                  </td>
+                </tr>
+
+                {/* Row 3: Properties */}
+                <tr className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <td className="p-4 sm:p-5 font-semibold text-[#0F2A44] dark:text-white sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                    Properties
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-700 dark:text-stone-300">
+                    {plans.per_listing?.propertyLimit || 1}
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-900 dark:text-stone-100 bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    {plans.bundle?.propertyLimit || 1}
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-purple-700 dark:text-purple-400 font-extrabold">
+                    Up to {plans.pro?.propertyLimit || 3}
+                  </td>
+                </tr>
+
+                {/* Row 4: AI credits */}
+                <tr className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <td className="p-4 sm:p-5 font-semibold text-[#0F2A44] dark:text-white sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                    AI credits
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-700 dark:text-stone-300">
+                    {plans.per_listing?.aiCreditsMonthly || 300} total
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-stone-900 dark:text-stone-100 bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    {plans.bundle?.aiCreditsMonthly || 600} total
+                  </td>
+                  <td className="p-4 sm:p-5 text-center text-purple-700 dark:text-purple-400 font-extrabold">
+                    {plans.pro?.aiCreditsMonthly ? plans.pro.aiCreditsMonthly.toLocaleString() : '1,000'} every month
+                  </td>
+                </tr>
+
+                {/* Row 5: Website, showings & offers tools */}
+                <tr className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <td className="p-4 sm:p-5 font-semibold text-[#0F2A44] dark:text-white sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                    Website, showings & offers tools
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                      <Check className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Included</span>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                      <Check className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Included</span>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+                      <Check className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Included</span>
+                  </td>
+                </tr>
+
+                {/* Row 6: Home Value Worksheet + appraisal guide */}
+                <tr className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <td className="p-4 sm:p-5 font-semibold text-[#0F2A44] dark:text-white sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                    Home Value Worksheet + appraisal guide
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500">
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Not included</span>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 shadow-sm ring-2 ring-emerald-500/20">
+                      <Check className="w-4 h-4 font-bold" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Included</span>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500">
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Not included</span>
+                  </td>
+                </tr>
+
+                {/* Row 7: Open house sign-in sheets */}
+                <tr className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <td className="p-4 sm:p-5 font-semibold text-[#0F2A44] dark:text-white sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                    Open house sign-in sheets
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500">
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Not included</span>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 shadow-sm ring-2 ring-emerald-500/20">
+                      <Check className="w-4 h-4 font-bold" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Included</span>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500">
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Not included</span>
+                  </td>
+                </tr>
+
+                {/* Row 8: Unlimited listing rewrites */}
+                <tr className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                  <td className="p-4 sm:p-5 font-semibold text-[#0F2A44] dark:text-white sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)]">
+                    Unlimited listing rewrites
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500">
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Not included</span>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 dark:text-stone-500">
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Not included</span>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 shadow-sm ring-2 ring-emerald-500/20">
+                      <Check className="w-4 h-4 font-bold" aria-hidden="true" />
+                    </span>
+                    <span className="sr-only">Included</span>
+                  </td>
+                </tr>
+
+                {/* Row 9: Choose Buttons */}
+                <tr className="bg-stone-50/40 dark:bg-stone-800/20">
+                  <td className="p-4 sm:p-5 sticky left-0 z-10 bg-white dark:bg-stone-900 shadow-[2px_0_6px_-2px_rgba(0,0,0,0.06)] font-semibold text-xs text-stone-400">
+                    Get Started
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <button
+                      type="button"
+                      onClick={() => onSelectPlan('per_listing')}
+                      className={`w-full max-w-[140px] mx-auto py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                        currentPlan === 'per_listing'
+                          ? 'bg-emerald-600 text-white cursor-default'
+                          : 'bg-[#FF6B5A] hover:bg-[#fa5644] text-white'
+                      }`}
+                    >
+                      {currentPlan === 'per_listing' ? 'Active' : 'Choose'}
+                    </button>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center bg-amber-50/60 dark:bg-amber-950/20 border-x border-amber-200 dark:border-amber-800/50">
+                    <button
+                      type="button"
+                      onClick={() => onSelectPlan('bundle')}
+                      className={`w-full max-w-[140px] mx-auto py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                        currentPlan === 'bundle'
+                          ? 'bg-emerald-600 text-white cursor-default'
+                          : 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
+                      }`}
+                    >
+                      {currentPlan === 'bundle' ? 'Active' : 'Choose'}
+                    </button>
+                  </td>
+                  <td className="p-4 sm:p-5 text-center">
+                    <button
+                      type="button"
+                      onClick={() => onSelectPlan('pro')}
+                      className={`w-full max-w-[140px] mx-auto py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                        currentPlan === 'pro'
+                          ? 'bg-emerald-600 text-white cursor-default'
+                          : 'bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-purple-600 dark:hover:bg-purple-500 text-white'
+                      }`}
+                    >
+                      {currentPlan === 'pro' ? 'Active' : 'Choose'}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </main>
     </div>
   );

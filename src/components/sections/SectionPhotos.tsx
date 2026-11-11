@@ -25,6 +25,8 @@ import {
   HelpCircle,
   RefreshCw,
 } from 'lucide-react';
+import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
+import { AiWaitNotice } from '../common/AiWaitNotice';
 
 interface SectionPhotosProps {
   property: PropertyProfile;
@@ -46,6 +48,21 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const [scriptError, setScriptError] = useState<string | null>(null);
   const [walkthroughScript, setWalkthroughScript] = useState<any | null>(null);
+
+  const { waitMessage: coachWaitMsg } = useAiWaitTimer(analyzingPhotoId !== null, () => {
+    if (analyzingPhotoId) {
+      setCoachErrors((prev) => ({
+        ...prev,
+        [analyzingPhotoId]: 'AI is busy, please try again',
+      }));
+    }
+    setAnalyzingPhotoId(null);
+  });
+
+  const { waitMessage: scriptWaitMsg } = useAiWaitTimer(isGeneratingScript, () => {
+    setIsGeneratingScript(false);
+    setScriptError('AI is busy, please try again');
+  });
 
   // Shot list interactive checklist
   const [shotList, setShotList] = useState<Record<string, boolean>>({
@@ -430,6 +447,10 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
                     </button>
                   </div>
 
+                  {analyzingPhotoId === photo.id && coachWaitMsg && (
+                    <AiWaitNotice message={coachWaitMsg} className="w-full justify-center" />
+                  )}
+
                   {coachErrors[photo.id] && (
                     <div className="flex items-center justify-between gap-2 text-[11px] text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-950/40 p-2 rounded-lg border border-red-200 dark:border-red-900/50">
                       <span>{coachErrors[photo.id]}</span>
@@ -547,24 +568,27 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={isGeneratingScript}
-            onClick={handleGenerateScript}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] dark:hover:bg-[#fa5644] transition-all disabled:opacity-50"
-          >
-            {isGeneratingScript ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Drafting Script...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-3.5 h-3.5 text-[#F2B544]" />
-                Generate Walkthrough Script
-              </>
-            )}
-          </button>
+          <div className="flex flex-col items-start sm:items-end gap-1 shrink-0">
+            <button
+              type="button"
+              disabled={isGeneratingScript}
+              onClick={handleGenerateScript}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] dark:hover:bg-[#fa5644] transition-all disabled:opacity-50"
+            >
+              {isGeneratingScript ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Drafting Script...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-[#F2B544]" />
+                  Generate Walkthrough Script
+                </>
+              )}
+            </button>
+            <AiWaitNotice message={scriptWaitMsg} />
+          </div>
         </div>
 
         {scriptError && (

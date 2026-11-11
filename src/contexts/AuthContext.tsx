@@ -192,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await setDoc(notifRef, {
               id: notifRef.id,
               uid: fbUser.uid,
-              title: 'Welcome to FSBO Command Center!',
+              title: 'Welcome to FSBO Compass!',
               message: 'Your 7-day Free Trial is active. Start by customizing your property facts and uploading photos.',
               type: 'system',
               read: false,

@@ -19,9 +19,10 @@ import { PlanType } from '../../types/saas';
 
 interface SectionAccountProps {
   onOpenPricing?: () => void;
+  onOpenCompare?: () => void;
 }
 
-export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing }) => {
+export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing, onOpenCompare }) => {
   const {
     currentUser,
     userProfile,
@@ -333,6 +334,27 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing })
                     Change Plan
                   </button>
                 )}
+
+                <a
+                  href="/pricing#compare"
+                  onClick={(e) => {
+                    if (onOpenCompare) {
+                      e.preventDefault();
+                      onOpenCompare();
+                    } else if (onOpenPricing) {
+                      e.preventDefault();
+                      window.history.pushState({}, '', '/pricing#compare');
+                      onOpenPricing();
+                      setTimeout(() => {
+                        const el = document.getElementById('compare');
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 150);
+                    }
+                  }}
+                  className="text-xs font-semibold text-[#0F2A44] dark:text-stone-300 hover:text-[#FF6B5A] dark:hover:text-[#FF6B5A] underline underline-offset-2 transition-colors px-1 py-2 inline-flex items-center"
+                >
+                  Compare plans
+                </a>
               </div>
             </div>
 

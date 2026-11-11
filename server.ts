@@ -36,14 +36,13 @@ const adminApp = getApps().length === 0
 const adminAuth = getAuth(adminApp);
 const adminDb = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId || undefined);
 
-// Helper to determine the production app URL (ensures no run.app leak)
+// Helper to determine the production app URL from APP_URL env var
 export function getAppUrl(): string {
-  let url = (process.env.APP_URL || 'https://fsbo-command-center.ai.studio').trim();
-  url = url.replace(/\/+$/, '');
-  if (url.includes('.run.app')) {
-    url = 'https://fsbo-command-center.ai.studio';
+  const envUrl = (process.env.APP_URL || '').trim();
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
   }
-  return url;
+  return 'https://fsbocompass.com';
 }
 
 // Request interface with verified Firebase user and rawBody buffer
@@ -1072,7 +1071,7 @@ app.post('/api/stripe/create-checkout-session', requireAuth, async (req: Authent
     const getPlanProductDetails = () => {
       if (planId === 'pro') {
         return {
-          name: 'FSBO Command Center - Pro Monthly',
+          name: 'FSBO Compass - Pro Monthly',
           description: 'Up to 3 properties, 1000 AI credits/mo, email support',
           amount: 2900, // $29.00 / month
           recurring: { interval: 'month' as const },
@@ -1080,14 +1079,14 @@ app.post('/api/stripe/create-checkout-session', requireAuth, async (req: Authent
       }
       if (planId === 'bundle') {
         return {
-          name: 'FSBO Command Center - Seller Pro + Home Value Worksheet',
+          name: 'FSBO Compass - Seller Pro + Home Value Worksheet',
           description: 'Full access for 1 property for 6 months, 600 AI credits, plus Home Value Worksheet',
           amount: 19700, // $197.00 one-time
           recurring: undefined,
         };
       }
       return {
-        name: 'FSBO Command Center - Per Listing (6 Months)',
+        name: 'FSBO Compass - Per Listing (6 Months)',
         description: 'Full access for 1 property for 6 months, 300 AI credits',
         amount: 14900, // $149.00 one-time
         recurring: undefined,
@@ -1114,6 +1113,7 @@ app.post('/api/stripe/create-checkout-session', requireAuth, async (req: Authent
     const session = await stripe.checkout.sessions.create({
       line_items: lineItems as any,
       mode: planId === 'pro' ? 'subscription' : 'payment',
+      allow_promotion_codes: true,
       success_url: `${appUrl}/account?session_id={CHECKOUT_SESSION_ID}&payment_success=true`,
       cancel_url: `${appUrl}/pricing?canceled=true`,
       customer_email: verifiedEmail || undefined,
@@ -1388,7 +1388,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`FSBO Command Center SaaS server running on port ${PORT}`);
+    console.log(`FSBO Compass SaaS server running on port ${PORT}`);
   });
 }
 

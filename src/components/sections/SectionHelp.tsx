@@ -113,14 +113,14 @@ export const SectionHelp: React.FC<SectionHelpProps> = ({
 
           <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <a
-              href="mailto:support@fsbocommandcenter.com?subject=FSBO%20Command%20Center%20Support%20Request"
+              href="mailto:support@fsbocompass.com?subject=FSBO%20Compass%20Support%20Request"
               className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-md shadow-[#FF6B5A]/25"
             >
               <Mail className="w-4 h-4" />
               <span>Email Support Team</span>
             </a>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-mono text-center sm:text-left">
-              support@fsbocommandcenter.com
+              support@fsbocompass.com
             </span>
           </div>
         </div>
@@ -135,7 +135,7 @@ export const SectionHelp: React.FC<SectionHelpProps> = ({
               Legal & Disclaimers
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              FSBO Command Center provides self-service software, educational checklists, and tools. We are not a licensed real estate broker, attorney, or certified appraiser.
+              FSBO Compass provides self-service software, educational checklists, and tools. We are not a licensed real estate broker, attorney, or certified appraiser.
             </p>
           </div>
 

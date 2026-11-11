@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mail, Lock, User, ArrowRight, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import { X, Mail, Lock, User, ArrowRight, CheckCircle2, AlertCircle, Compass } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface AuthModalProps {
@@ -116,17 +116,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="w-12 h-12 bg-[#FF6B5A]/10 text-[#FF6B5A] rounded-2xl flex items-center justify-center mx-auto mb-3">
-            <Sparkles className="w-6 h-6" />
+          <div className="w-12 h-12 bg-[#FF6B5A]/10 text-[#FF6B5A] rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm">
+            <Compass className="w-6 h-6 text-[#FF6B5A]" />
           </div>
           <h2 className="text-2xl font-heading font-extrabold text-[#0F2A44]">
             {mode === 'login' && 'Welcome Back'}
-            {mode === 'signup' && 'Start Your 7-Day Free Trial'}
+            {mode === 'signup' && 'Welcome to FSBO Compass'}
             {mode === 'forgot' && 'Reset Your Password'}
           </h2>
           <p className="text-xs sm:text-sm text-stone-500 mt-1">
             {mode === 'login' && 'Log in to continue managing your FSBO listing.'}
-            {mode === 'signup' && 'No credit card required. Full checklist and AI writer.'}
+            {mode === 'signup' && 'Your step-by-step guide to selling your home without an agent.'}
             {mode === 'forgot' && 'Enter your email to receive a password reset link.'}
           </p>
         </div>

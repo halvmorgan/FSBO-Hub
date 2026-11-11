@@ -683,7 +683,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
 
       {/* Footer */}
       <footer className="mt-16 bg-white border-t border-stone-200 py-8 text-center text-xs text-stone-500">
-        <p>Equal Housing Opportunity. Powered by FSBO Command Center.</p>
+        <p>Equal Housing Opportunity. Powered by FSBO Compass.</p>
         <p className="mt-1">
           Information deemed reliable but not guaranteed. Buyers should verify all measurements and specifications.
         </p>

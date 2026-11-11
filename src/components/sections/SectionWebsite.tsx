@@ -43,6 +43,7 @@ import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { PublicSiteDoc } from '../../types/saas';
 import { incrementFirestoreReadCount } from '../../lib/firestoreTracker';
+import { getPropertyWebsiteUrl } from '../../lib/appUrl';
 
 interface SectionWebsiteProps {
   property: PropertyProfile;
@@ -93,7 +94,7 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
     ? property.address.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
     : 'my-home';
 
-  const hostedSiteUrl = `${window.location.origin}/p/${slug}`;
+  const hostedSiteUrl = getPropertyWebsiteUrl(slug);
 
   // Check if already published in Firestore (checks sessionStorage first to avoid burning reads on every tab switch)
   useEffect(() => {
@@ -770,6 +771,11 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
                 <img src={qrCodeDataUrl} alt="QR" className="w-16 h-16" />
               </div>
             )}
+          </div>
+
+          <div className="mt-3 pt-2 border-t border-stone-200 flex items-center justify-between text-[10px] text-stone-500">
+            <span className="font-semibold text-stone-700">Powered by FSBO Compass</span>
+            <span>Equal Housing Opportunity</span>
           </div>
         </div>
       </div>

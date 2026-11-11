@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   RefreshCw,
 } from 'lucide-react';
+import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
+import { AiWaitNotice } from '../common/AiWaitNotice';
 
 interface SectionAiFinderProps {
   property: PropertyProfile;
@@ -70,6 +72,22 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
   const [isCheckingGaps, setIsCheckingGaps] = useState(false);
   const [gapQuestions, setGapQuestions] = useState<MissingFeatureQuestion[]>([]);
   const [gapError, setGapError] = useState<string | null>(null);
+
+  // 15s wait / 90s timeout handlers
+  const { waitMessage: photoWaitMsg } = useAiWaitTimer(isScanningPhotos, () => {
+    setIsScanningPhotos(false);
+    setPhotoScanError('AI is busy, please try again');
+  });
+
+  const { waitMessage: publicWaitMsg } = useAiWaitTimer(isCheckingPublic, () => {
+    setIsCheckingPublic(false);
+    setPublicError('AI is busy, please try again');
+  });
+
+  const { waitMessage: gapWaitMsg } = useAiWaitTimer(isCheckingGaps, () => {
+    setIsCheckingGaps(false);
+    setGapError('AI is busy, please try again');
+  });
 
   // Action 1: Scan Photos
   const handleScanPhotos = async () => {
@@ -405,6 +423,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
                 </>
               )}
             </button>
+            <AiWaitNotice message={photoWaitMsg} className="mt-1" />
             {photoScanError && (
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
@@ -556,6 +575,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
                 </>
               )}
             </button>
+            <AiWaitNotice message={publicWaitMsg} className="mt-1" />
             {publicError && (
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
@@ -753,6 +773,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
                 </>
               )}
             </button>
+            <AiWaitNotice message={gapWaitMsg} className="mt-1" />
             {gapError && (
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">

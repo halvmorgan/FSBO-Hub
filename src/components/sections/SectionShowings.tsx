@@ -25,6 +25,7 @@ import {
   Flame,
   FileCheck,
 } from 'lucide-react';
+import { getPropertyWebsiteUrl } from '../../lib/appUrl';
 
 interface SectionShowingsProps {
   property: PropertyProfile;
@@ -227,7 +228,11 @@ export const SectionShowings: React.FC<SectionShowingsProps> = ({
 
   // Copy Open house social announcement
   const handleCopyOHAnnouncement = (oh: OpenHouseItem) => {
-    const text = `🏡 OPEN HOUSE THIS WEEKEND!\n📍 ${property.address}, ${property.city}\n🗓️ ${oh.date} from ${oh.startTime} to ${oh.endTime}\n\nCome tour this gorgeous ${property.beds} Bed, ${property.bathsFull} Bath home (${property.sqft.toLocaleString()} sqft) offered directly by owner for $${property.price.toLocaleString()}.\n\n✅ Remodeled kitchen, pristine finishes & beautiful yard.\n📞 Questions? Contact owner: ${settings.sellerPhone}\n👉 Full photo gallery & directions: https://ais-dev-...`;
+    const slug = property.address
+      ? property.address.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      : 'my-home';
+    const siteUrl = getPropertyWebsiteUrl(slug);
+    const text = `🏡 OPEN HOUSE THIS WEEKEND!\n📍 ${property.address}, ${property.city}\n🗓️ ${oh.date} from ${oh.startTime} to ${oh.endTime}\n\nCome tour this gorgeous ${property.beds} Bed, ${property.bathsFull} Bath home (${property.sqft.toLocaleString()} sqft) offered directly by owner for $${property.price.toLocaleString()}.\n\n✅ Remodeled kitchen, pristine finishes & beautiful yard.\n📞 Questions? Contact owner: ${settings.sellerPhone}\n👉 Full photo gallery & directions: ${siteUrl}`;
 
     navigator.clipboard.writeText(text);
     setCopiedOHPost(true);

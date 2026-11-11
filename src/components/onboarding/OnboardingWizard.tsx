@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PropertyProfile, PhotoItem } from '../../types';
-import { MapPin, Camera, Home, Calendar, ArrowRight, ArrowLeft, Check, Sparkles, Upload } from 'lucide-react';
+import { MapPin, Camera, Home, Compass, Calendar, ArrowRight, ArrowLeft, Check, Sparkles, Upload } from 'lucide-react';
 import { savePhotoToDB } from '../../lib/indexedDb';
 
 interface OnboardingWizardProps {
@@ -56,8 +56,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         {/* Top Header */}
         <div className="bg-gradient-to-r from-[#0F2A44] to-[#1E6F80] p-6 text-white text-center relative">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-white/90 text-xs font-semibold mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-[#F2B544]" />
-            <span>Welcome to FSBO Command Center</span>
+            <Compass className="w-3.5 h-3.5 text-[#F2B544]" />
+            <span>Welcome to FSBO Compass</span>
           </div>
           <h2 className="text-2xl font-bold font-heading">Let's set up your home sale</h2>
           <p className="text-xs text-slate-200 mt-1 max-w-md mx-auto">
@@ -356,7 +356,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 onClick={handleFinish}
                 className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-lg shadow-[#FF6B5A]/25"
               >
-                Go to Command Center
+                Enter FSBO Compass
                 <Check className="w-3.5 h-3.5" />
               </button>
             )}

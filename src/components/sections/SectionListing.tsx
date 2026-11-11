@@ -19,6 +19,8 @@ import {
   RefreshCw,
   Share2,
 } from 'lucide-react';
+import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
+import { AiWaitNotice } from '../common/AiWaitNotice';
 
 interface SectionListingProps {
   property: PropertyProfile;
@@ -37,6 +39,11 @@ export const SectionListing: React.FC<SectionListingProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const { waitMessage } = useAiWaitTimer(isGenerating, () => {
+    setIsGenerating(false);
+    setErrorMsg('AI is busy, please try again');
+  });
 
   const handleCopy = (key: string, text: string) => {
     navigator.clipboard.writeText(text);
@@ -129,6 +136,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
                 </>
               )}
             </button>
+            <AiWaitNotice message={waitMessage} className="mt-1" />
             {errorMsg && (
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">

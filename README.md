@@ -1,6 +1,6 @@
-# FSBO Command Center - Multi-Customer SaaS
+# FSBO Compass - Multi-Customer SaaS
 
-**FSBO Command Center** is an all-in-one software-as-a-service (SaaS) platform that empowers residential homeowners to market, show, negotiate, and close the sale of their home without paying traditional 5–6% real estate agent commissions.
+**FSBO Compass** is an all-in-one software-as-a-service (SaaS) platform that empowers residential homeowners to market, show, negotiate, and close the sale of their home without paying traditional 3% to 6% real estate agent commissions.
 
 ---
 

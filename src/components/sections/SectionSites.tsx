@@ -26,6 +26,8 @@ import {
   Globe,
   RefreshCw,
 } from 'lucide-react';
+import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
+import { AiWaitNotice } from '../common/AiWaitNotice';
 
 interface SectionSitesProps {
   sites: ListingSiteItem[];
@@ -95,6 +97,16 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [siteErrors, setSiteErrors] = useState<Record<string, string>>({});
+
+  const { waitMessage: siteRulesWaitMsg } = useAiWaitTimer(checkingSiteId !== null, () => {
+    if (checkingSiteId) {
+      setSiteErrors((prev) => ({
+        ...prev,
+        [checkingSiteId]: 'AI is busy, please try again',
+      }));
+    }
+    setCheckingSiteId(null);
+  });
 
   // Gemini + Google Search Grounding: Check Current Rules
   const handleCheckRules = async (site: ListingSiteItem) => {
@@ -366,6 +378,9 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
                     </>
                   )}
                 </button>
+                {checkingSiteId === site.id && siteRulesWaitMsg && (
+                  <AiWaitNotice message={siteRulesWaitMsg} />
+                )}
                 {siteErrors[site.id] && (
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] text-red-500 font-medium">

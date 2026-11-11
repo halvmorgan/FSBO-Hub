@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   LayoutDashboard,
   Home,
+  Compass,
   Sparkles,
   Camera,
   DollarSign,
@@ -170,13 +171,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center text-white font-bold shadow-md shadow-[#FF6B5A]/20">
-                <Home className="w-4 h-4 text-white" />
+                <Compass className="w-5 h-5 text-white" />
               </div>
               <div>
                 <h1 className="font-heading font-extrabold text-sm tracking-tight text-white flex items-center gap-1">
-                  FSBO <span className="text-[#FF6B5A]">Command</span>
+                  FSBO <span className="text-[#FF6B5A]">Compass</span>
                 </h1>
-                <p className="text-[10px] text-slate-300 font-medium">Home Sale Headquarters</p>
+                <p className="text-[10px] text-slate-300 font-medium leading-tight">Your step-by-step guide to selling your home without an agent.</p>
               </div>
             </div>
 
@@ -391,10 +392,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-2.5 bg-[#0F2A44] text-white shadow-md font-sans">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center text-white font-bold">
-            <Home className="w-3.5 h-3.5 text-white" />
+            <Compass className="w-4 h-4 text-white" />
           </div>
           <span className="font-heading font-extrabold text-sm text-white">
-            FSBO <span className="text-[#FF6B5A]">Command</span>
+            FSBO <span className="text-[#FF6B5A]">Compass</span>
           </span>
         </div>
 
@@ -426,8 +427,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="relative w-4/5 max-w-xs bg-[#0F2A44] text-white h-full flex flex-col p-4 shadow-2xl z-10">
             <div className="flex items-center justify-between pb-3 border-b border-[#1E4268]/60">
               <div className="flex items-center gap-2">
-                <Home className="w-4 h-4 text-[#FF6B5A]" />
-                <span className="font-heading font-bold text-sm text-white">Menu</span>
+                <Compass className="w-4 h-4 text-[#FF6B5A]" />
+                <span className="font-heading font-bold text-sm text-white">FSBO Compass</span>
               </div>
               <button
                 type="button"

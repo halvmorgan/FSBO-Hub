@@ -12,6 +12,7 @@ import {
   Inbox,
   HelpCircle,
   Home,
+  Compass,
   Check,
   ChevronRight,
   ExternalLink,
@@ -44,7 +45,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     },
     {
       q: 'Do I need any real estate or tech experience to use this?',
-      a: 'None at all. FSBO Command Center was designed specifically for regular homeowners. Every section features a one-sentence "Why this matters" guide and plain-English tooltips for every contract term.',
+      a: 'None at all. FSBO Compass was designed specifically for regular homeowners. Every section features a one-sentence "Why this matters" guide and plain-English tooltips for every contract term.',
     },
     {
       q: 'How do buyers find my home if I do not hire a listing agent?',
@@ -67,11 +68,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center font-bold text-white shadow-lg shadow-[#FF6B5A]/20">
-              <Home className="w-5 h-5 text-white" />
+              <Compass className="w-5 h-5 text-white" />
             </div>
             <div>
               <span className="font-heading font-extrabold text-base tracking-tight text-white">
-                FSBO <span className="text-[#FF6B5A]">Command</span>
+                FSBO <span className="text-[#FF6B5A]">Compass</span>
               </span>
               <span className="hidden sm:inline-block ml-2 text-[10px] uppercase font-bold tracking-widest text-[#F2B544] px-1.5 py-0.5 rounded bg-white/10">
                 SaaS
@@ -117,17 +118,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <section className="relative overflow-hidden bg-gradient-to-r from-[#0F2A44] via-[#143E5E] to-[#1E6F80] text-white py-16 sm:py-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-5xl mx-auto text-center space-y-6 relative z-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-white/90 border border-white/15">
-            <Sparkles className="w-4 h-4 text-[#F2B544]" />
-            <span>The #1 All-In-One Homeowner Sale Platform</span>
+            <Compass className="w-4 h-4 text-[#F2B544]" />
+            <span>Your step-by-step guide to selling your home without an agent.</span>
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-black font-heading tracking-tight leading-tight text-white">
             Sell your home yourself. <br />
-            <span className="text-[#FF6B5A]">We'll guide every step.</span>
+            <span className="text-[#FF6B5A]">We'll point the way.</span>
           </h1>
 
           <p className="text-base sm:text-xl text-slate-200 max-w-2xl mx-auto leading-relaxed">
-            From your first smartphone photo to the closing table. Pinpoint your pricing with comps, craft compliant listings with Gemini AI, host your custom property website, and keep $15,000+ in commissions.
+            Agent commissions are usually 3% to 6%. FSBO Compass walks you through every step to price, list, show, and close. Save up to $15,000 or more with automated guidance, comps, and verified contract checklists.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-4">
@@ -173,7 +174,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             Simple 3-Step Process
           </span>
           <h2 className="text-2xl sm:text-3xl font-extrabold font-heading text-[#0F2A44] dark:text-white">
-            How FSBO Command Center Works
+            How FSBO Compass Works
           </h2>
           <p className="text-sm text-slate-600 dark:text-slate-400">
             A linear, confidence-building roadmap that turns an intimidating home sale into simple checkboxes.
@@ -338,7 +339,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             Ready to sell your home and keep your equity?
           </h2>
           <p className="text-xs sm:text-sm text-slate-200 max-w-xl mx-auto">
-            Try FSBO Command Center free for 7 days. No credit card required.
+            Try FSBO Compass free for 7 days. No credit card required.
           </p>
           <button
             type="button"
@@ -348,6 +349,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <span>Start Free Trial Now</span>
             <ArrowRight className="w-4 h-4" />
           </button>
+          <div>
+            <a
+              href="/pricing#compare"
+              onClick={(e) => {
+                if (onViewPricing) {
+                  e.preventDefault();
+                  window.history.pushState({}, '', '/pricing#compare');
+                  onViewPricing();
+                  setTimeout(() => {
+                    const el = document.getElementById('compare');
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }, 150);
+                }
+              }}
+              className="inline-flex items-center gap-1 text-xs text-slate-300 hover:text-white transition-colors underline decoration-slate-400 hover:decoration-white"
+            >
+              Compare plans &rarr;
+            </a>
+          </div>
         </div>
       </section>
 
@@ -355,11 +375,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <footer className="bg-[#0C2238] text-white py-12 px-4 sm:px-6 border-t border-[#1E4268]/40 text-xs">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-1 text-center md:text-left">
-            <span className="font-heading font-extrabold text-sm tracking-tight text-white">
-              FSBO <span className="text-[#FF6B5A]">Command Center</span>
-            </span>
+            <div className="flex items-center justify-center md:justify-start gap-2">
+              <Compass className="w-4 h-4 text-[#FF6B5A]" />
+              <span className="font-heading font-extrabold text-sm tracking-tight text-white">
+                FSBO <span className="text-[#FF6B5A]">Compass</span>
+              </span>
+            </div>
             <p className="text-slate-400">
-              © {new Date().getFullYear()} FSBO Command Center. All rights reserved.
+              © 2026 FSBO Compass. All rights reserved.
             </p>
             <p className="text-slate-500 text-[11px] max-w-md">
               General software tools only; not legal, tax, or real estate advice.
@@ -377,10 +400,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Privacy Policy
             </button>
             <a
-              href={`mailto:${saasConfig.supportEmail || 'support@fsbocommandcenter.com'}`}
+              href="mailto:support@fsbocompass.com"
               className="hover:text-white flex items-center gap-1"
             >
-              Contact Support
+              support@fsbocompass.com
             </a>
           </div>
         </div>

@@ -782,7 +782,7 @@ function AppContent() {
     );
   }
 
-  // 6. Authenticated FSBO Command Center Dashboard
+  // 6. Authenticated FSBO Compass Dashboard
   return (
     <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100 flex flex-col lg:flex-row antialiased selection:bg-[#FF6B5A] selection:text-white font-sans">
       {/* Sidebar Navigation */}
@@ -1023,6 +1023,10 @@ function AppContent() {
             <SectionAccount
               onOpenPricing={() => {
                 window.history.pushState({}, '', '/pricing');
+                setCurrentView('pricing');
+              }}
+              onOpenCompare={() => {
+                window.history.pushState({}, '', '/pricing#compare');
                 setCurrentView('pricing');
               }}
             />

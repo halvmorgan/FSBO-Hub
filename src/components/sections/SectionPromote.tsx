@@ -20,6 +20,7 @@ import {
   Target,
   Sparkles,
 } from 'lucide-react';
+import { getPropertyWebsiteUrl } from '../../lib/appUrl';
 
 interface SectionPromoteProps {
   property: PropertyProfile;
@@ -51,7 +52,10 @@ export const SectionPromote: React.FC<SectionPromoteProps> = ({
     ? `📅 Next Open House: ${nextOH.date} from ${nextOH.startTime} to ${nextOH.endTime}`
     : '📅 Private tours available by appointment';
 
-  const propertySiteUrl = `https://${property.address.replace(/\s+/g, '').toLowerCase()}.com`;
+  const slug = property.address
+    ? property.address.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    : 'my-home';
+  const propertySiteUrl = getPropertyWebsiteUrl(slug);
 
   // Pre-formatted copy templates
   const localGroupPost = `🏡 FOR SALE BY OWNER in ${property.city}!\n📍 ${property.address}\n💰 $${property.price.toLocaleString()} • ${property.beds} Beds • ${property.bathsFull}.${property.bathsHalf} Baths • ${property.sqft.toLocaleString()} SqFt\n\n✨ Top Features:\n${property.specialNotes.filter(Boolean).map((n) => `• ${n}`).join('\n')}\n\n${ohText}\n👉 Full photo gallery, floor plan & showing requests:\n${propertySiteUrl}\n\nDirect contact with owners: ${settings.sellerPhone}`;
