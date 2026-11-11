@@ -3,6 +3,9 @@ import {
   User as FirebaseUser,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  fetchSignInMethodsForEmail,
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -238,8 +241,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 3. Auth State Observer
+  // 3. Auth State Observer & Redirect Result
   useEffect(() => {
+    // Check if the user is returning from a signInWithRedirect
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          console.log('Redirect sign-in completed successfully for:', result.user.email);
+        }
+      })
+      .catch((err) => {
+        console.error('Redirect sign-in error code:', err?.code, err);
+      });
+
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setCurrentUser(fbUser);
 
@@ -327,7 +341,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Auth Operations
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    provider.setCustomParameters({ prompt: 'select_account' });
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (popupErr: any) {
+      console.error('Google signInWithPopup error code:', popupErr?.code, popupErr);
+      const code = popupErr?.code || '';
+      const msg = (popupErr?.message || '').toLowerCase();
+      const isBlocked =
+        code === 'auth/popup-blocked' ||
+        code === 'auth/cancelled-popup-request' ||
+        msg.includes('popup') ||
+        msg.includes('blocked');
+
+      if (isBlocked) {
+        console.warn('Popup blocked, falling back to signInWithRedirect');
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+      throw popupErr;
+    }
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
@@ -343,7 +376,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const resetPassword = async (email: string) => {
-    await sendPasswordResetEmail(auth, email);
+    // Password reset emails must send user back to https://fsbocompass.com (never ai.studio or run.app)
+    const actionCodeSettings = {
+      url: 'https://fsbocompass.com',
+      handleCodeInApp: false,
+    };
+    try {
+      await sendPasswordResetEmail(auth, email, actionCodeSettings);
+    } catch (err: any) {
+      console.error('Password reset error code:', err?.code, err);
+      if (err?.code === 'auth/unauthorized-continue-uri') {
+        // Fallback without actionCodeSettings if domain is pending in Firebase Authorized Domains
+        console.warn('ActionCodeSettings URL not authorized yet, falling back to default reset email');
+        await sendPasswordResetEmail(auth, email);
+      } else {
+        throw err;
+      }
+    }
   };
 
   const sendVerification = async () => {

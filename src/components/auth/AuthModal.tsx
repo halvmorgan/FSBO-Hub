@@ -6,12 +6,75 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: 'login' | 'signup';
+  onSuccess?: () => void;
+}
+
+function getFriendlyAuthErrorMessage(err: any): string {
+  // Always log the real error code to the console for debugging
+  console.error('Firebase Auth error code:', err?.code, err);
+
+  const code = (err?.code || '').toLowerCase();
+  const msg = (err?.message || '').toLowerCase();
+
+  if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+    return "Sign-in isn't set up for this web address yet. Please try again in a few minutes or contact support.";
+  }
+
+  if (
+    code === 'auth/invalid-credential' ||
+    code === 'auth/wrong-password' ||
+    code === 'auth/user-not-found' ||
+    msg.includes('invalid-credential') ||
+    msg.includes('wrong-password') ||
+    msg.includes('user-not-found')
+  ) {
+    return "That email and password don't match. If you signed up with Google, use 'Continue with Google', or click 'Forgot password?'.";
+  }
+
+  if (
+    code === 'auth/popup-closed-by-user' ||
+    msg.includes('popup-closed-by-user') ||
+    msg.includes('closed-by-user')
+  ) {
+    return "The Google sign-in window was closed. Please try again.";
+  }
+
+  if (code === 'auth/too-many-requests' || msg.includes('too-many-requests')) {
+    return "Too many tries. Please wait a few minutes or reset your password.";
+  }
+
+  // Any other error
+  return "Something went wrong signing in. Please try again.";
+}
+
+async function checkGoogleAccount(emailStr: string): Promise<boolean> {
+  const cleanEmail = emailStr.trim().toLowerCase();
+  if (!cleanEmail) return false;
+
+  try {
+    const res = await fetch('/api/auth/check-email-provider', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: cleanEmail }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.isGoogleAccount || (data.hasGoogle && !data.hasPassword) || data.isGoogleOnly) {
+        return true;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return false;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   initialMode = 'signup',
+  onSuccess,
 }) => {
   const { signInWithGoogle, loginWithEmail, signupWithEmail, resetPassword } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>(initialMode);
@@ -39,37 +102,54 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       if (mode === 'login') {
-        await loginWithEmail(email, password);
-        onClose();
+        try {
+          await loginWithEmail(email, password);
+          onSuccess?.();
+          onClose();
+        } catch (loginErr: any) {
+          console.error('Firebase Auth error code:', loginErr?.code, loginErr);
+
+          // Check if this account was created with Google
+          const isGoogle = await checkGoogleAccount(email);
+          if (isGoogle) {
+            setError("This account was created with Google. Please use 'Continue with Google'.");
+            return;
+          }
+
+          setError(getFriendlyAuthErrorMessage(loginErr));
+        }
       } else if (mode === 'signup') {
         if (password.length < 6) {
-          throw new Error('Password must be at least 6 characters.');
+          setError('Password must be at least 6 characters.');
+          return;
         }
-        await signupWithEmail(email, password, displayName);
-        onClose();
+        try {
+          await signupWithEmail(email, password, displayName);
+          onSuccess?.();
+          onClose();
+        } catch (signupErr: any) {
+          console.error('Firebase Auth error code:', signupErr?.code, signupErr);
+          const code = (signupErr?.code || '').toLowerCase();
+          if (code === 'auth/email-already-in-use') {
+            const isGoogle = await checkGoogleAccount(email);
+            if (isGoogle) {
+              setError("This account was created with Google. Please use 'Continue with Google'.");
+            } else {
+              setError("An account already exists with this email. Please log in or use 'Continue with Google'.");
+            }
+          } else {
+            setError(getFriendlyAuthErrorMessage(signupErr));
+          }
+        }
       } else if (mode === 'forgot') {
-        await resetPassword(email);
-        setResetSent(true);
+        try {
+          await resetPassword(email);
+          setResetSent(true);
+        } catch (forgotErr: any) {
+          console.error('Firebase Auth error code:', forgotErr?.code, forgotErr);
+          setError(getFriendlyAuthErrorMessage(forgotErr));
+        }
       }
-    } catch (err: any) {
-      console.error('Firebase Auth technical error:', err);
-      let msg = err.message || 'An error occurred during authentication.';
-      if (
-        err.code === 'auth/operation-not-allowed' ||
-        msg.includes('auth/operation-not-allowed') ||
-        msg.includes('operation-not-allowed')
-      ) {
-        msg = 'Sign-up is temporarily unavailable. Please try again later.';
-      } else if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password')) {
-        msg = 'Invalid email or password. Please try again.';
-      } else if (msg.includes('auth/user-not-found')) {
-        msg = 'No account found with this email. Please sign up.';
-      } else if (msg.includes('auth/email-already-in-use')) {
-        msg = 'An account already exists with this email. Please log in.';
-      } else if (msg.includes('auth/weak-password')) {
-        msg = 'Password is too weak. Please choose at least 6 characters.';
-      }
-      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -80,20 +160,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     try {
       await signInWithGoogle();
+      onSuccess?.();
       onClose();
     } catch (err: any) {
-      console.error('Google sign-in technical error:', err);
-      if (!err.message?.includes('closed-by-user')) {
-        if (
-          err.code === 'auth/operation-not-allowed' ||
-          err.message?.includes('auth/operation-not-allowed') ||
-          err.message?.includes('operation-not-allowed')
-        ) {
-          setError('Sign-up is temporarily unavailable. Please try again later.');
-        } else {
-          setError(err.message || 'Failed to sign in with Google.');
-        }
-      }
+      console.error('Firebase Auth error code:', err?.code, err);
+      setError(getFriendlyAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }

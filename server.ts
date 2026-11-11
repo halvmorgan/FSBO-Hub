@@ -93,6 +93,36 @@ app.use(express.json({
   },
 }));
 
+// Check if an email account was created with Google OAuth (to advise user to use 'Continue with Google')
+app.post('/api/auth/check-email-provider', async (req: Request, res: Response) => {
+  const { email } = req.body;
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    const userRecord = await adminAuth.getUserByEmail(cleanEmail);
+    const hasGoogle = userRecord.providerData.some((p) => p.providerId === 'google.com');
+    const hasPassword = userRecord.providerData.some((p) => p.providerId === 'password');
+    const isGoogleAccount = hasGoogle && !hasPassword;
+
+    return res.json({
+      exists: true,
+      isGoogleAccount,
+      hasGoogle,
+      hasPassword,
+      providers: userRecord.providerData.map((p) => p.providerId),
+    });
+  } catch (err: any) {
+    if (err?.code === 'auth/user-not-found') {
+      return res.json({ exists: false, isGoogleAccount: false, providers: [] });
+    }
+    console.error('Error checking user email provider in adminAuth:', err?.code, err?.message);
+    return res.status(500).json({ error: 'Could not check provider' });
+  }
+});
+
 // In-memory credit tracking cache for low-latency rate limiting and credit checks
 // (Syncs with client/Firestore user record)
 interface UserCreditRecord {

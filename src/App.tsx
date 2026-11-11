@@ -429,6 +429,16 @@ function AppContent() {
     (property.address && property.address !== '4288 Meadowview Drive' && property.price > 0)
   );
 
+  const handleAuthSuccess = () => {
+    setAuthModalOpen(false);
+    window.history.pushState({}, '', '/');
+    setCurrentView('app');
+    setActiveTab('dashboard');
+    if (!hasFilledInfo) {
+      setShowWizard(true);
+    }
+  };
+
   // If a signed-in user hasn't filled in their info yet, prompt the onboarding wizard immediately
   useEffect(() => {
     if (currentUser && !authLoading && !hasFilledInfo) {
@@ -707,6 +717,7 @@ function AppContent() {
           isOpen={authModalOpen}
           onClose={() => setAuthModalOpen(false)}
           initialMode={authModalMode}
+          onSuccess={handleAuthSuccess}
         />
       </>
     );
@@ -730,6 +741,7 @@ function AppContent() {
           isOpen={authModalOpen}
           onClose={() => setAuthModalOpen(false)}
           initialMode={authModalMode}
+          onSuccess={handleAuthSuccess}
         />
       </>
     );
@@ -756,6 +768,7 @@ function AppContent() {
           isOpen={authModalOpen}
           onClose={() => setAuthModalOpen(false)}
           initialMode={authModalMode}
+          onSuccess={handleAuthSuccess}
         />
       </>
     );
@@ -835,6 +848,7 @@ function AppContent() {
           isOpen={authModalOpen}
           onClose={() => setAuthModalOpen(false)}
           initialMode={authModalMode}
+          onSuccess={handleAuthSuccess}
         />
       </>
     );
@@ -1175,6 +1189,7 @@ function AppContent() {
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         initialMode={authModalMode}
+        onSuccess={handleAuthSuccess}
       />
     </div>
   );

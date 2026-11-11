@@ -7,15 +7,21 @@ export function getAppUrl(): string {
   // 1. Check Vite env var if provided at build or runtime
   const clientEnvUrl = (import.meta as any).env?.VITE_APP_URL || (import.meta as any).env?.APP_URL;
   if (clientEnvUrl && typeof clientEnvUrl === 'string' && clientEnvUrl.trim()) {
-    return clientEnvUrl.trim().replace(/\/+$/, '');
+    const trimmed = clientEnvUrl.trim().replace(/\/+$/, '');
+    if (!trimmed.includes('run.app') && !trimmed.includes('ai.studio')) {
+      return trimmed;
+    }
   }
 
-  // 2. Browser window origin
+  // 2. Browser window origin (if custom domain)
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin.replace(/\/+$/, '');
+    const origin = window.location.origin.replace(/\/+$/, '');
+    if (!origin.includes('run.app') && !origin.includes('ai.studio') && !origin.includes('localhost')) {
+      return origin;
+    }
   }
 
-  // 3. Fallback
+  // 3. Fallback canonical custom domain
   return 'https://fsbocompass.com';
 }
 
