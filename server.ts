@@ -362,10 +362,24 @@ async function generateContentWithRetryAndFallback(params: {
       for (let attempt = 1; attempt <= attempts; attempt++) {
         console.log(`[Gemini] trying model ${currentModel} (attempt ${attempt}/${attempts})`);
         try {
-          const response = await aiClient.models.generateContent({
-            model: currentModel,
-            contents: params.contents,
-            config: params.config,
+          // Hard time limit: a hung Gemini call must never block the queue for every user
+          const CALL_TIMEOUT_MS = 45000;
+          let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+          const response = await Promise.race([
+            aiClient.models.generateContent({
+              model: currentModel,
+              contents: params.contents,
+              config: params.config,
+            }),
+            new Promise<never>((_, reject) => {
+              timeoutHandle = setTimeout(() => {
+                const tErr: any = new Error(`Gemini call timed out after ${CALL_TIMEOUT_MS / 1000}s (503 service unavailable)`);
+                tErr.status = 503;
+                reject(tErr);
+              }, CALL_TIMEOUT_MS);
+            }),
+          ]).finally(() => {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
           });
           console.log(`[Gemini] model ${currentModel} succeeded on attempt ${attempt}`);
           return { response, modelUsed: currentModel };
