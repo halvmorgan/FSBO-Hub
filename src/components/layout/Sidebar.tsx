@@ -42,6 +42,7 @@ interface SidebarProps {
   onToggleDarkMode: () => void;
   onOpenHelp?: () => void;
   onOpenPricing?: () => void;
+  onLogout?: () => void;
 }
 
 interface NavItem {
@@ -61,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleDarkMode,
   onOpenHelp,
   onOpenPricing,
+  onLogout,
 }) => {
   const {
     currentUser,
@@ -354,7 +356,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* Footer info, dark mode, support & logout */}
-        <div className="p-3 border-t border-[#1E4268]/40 bg-[#0C2238] space-y-2">
+        <div className="p-3 border-t border-[#1E4268]/40 bg-[#0C2238] space-y-2.5">
           <div className="flex items-center justify-between text-xs text-slate-400">
             {onOpenHelp && (
               <button
@@ -366,26 +368,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </button>
             )}
 
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={onToggleDarkMode}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#14385A] transition-colors"
-                title="Toggle theme"
-              >
-                {settings.darkMode ? <Sun className="w-3.5 h-3.5 text-[#F2B544]" /> : <Moon className="w-3.5 h-3.5" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => logout()}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-[#14385A] transition-colors"
-                title="Log Out"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onToggleDarkMode}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#14385A] transition-colors"
+              title="Toggle theme"
+            >
+              {settings.darkMode ? <Sun className="w-3.5 h-3.5 text-[#F2B544]" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => (onLogout ? onLogout() : logout())}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 bg-[#14385A]/50 hover:bg-[#FF6B5A]/15 hover:text-[#FF6B5A] border border-[#1E4268]/50 hover:border-[#FF6B5A]/40 transition-all cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Log Out</span>
+          </button>
 
           <div className="text-[10px] text-slate-400 truncate flex items-center justify-between pt-1 border-t border-[#1E4268]/30">
             <span className="truncate">{userProfile?.email || currentUser?.email}</span>
@@ -398,9 +398,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-2.5 bg-[#0F2A44] text-white shadow-md font-sans">
         <button
           type="button"
-          onClick={() => handleSelectTab('dashboard')}
+          onClick={() => handleSelectTab('my-listing')}
           className="flex items-center gap-2 text-left focus:outline-none hover:opacity-90 transition-opacity"
-          title="FSBO Compass - Go to My Home Dashboard"
+          title="FSBO Compass - Go to My Listing"
         >
           <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center text-white font-bold">
             <Compass className="w-4 h-4 text-white" />
@@ -507,17 +507,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
             </nav>
 
-            <div className="pt-3 border-t border-[#1E4268]/60 flex items-center justify-between">
+            <div className="pt-3 border-t border-[#1E4268]/60 space-y-2.5">
               <button
-                onClick={() => logout()}
-                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1.5"
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  if (onLogout) onLogout();
+                  else logout();
+                }}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-200 bg-[#14385A]/60 hover:bg-[#FF6B5A]/20 hover:text-[#FF6B5A] border border-[#1E4268]/60 hover:border-[#FF6B5A]/40 transition-all cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
                 <span>Log Out</span>
               </button>
-              <span className="text-[10px] text-slate-400">
-                {planConfig.name}
-              </span>
+              <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
+                <span className="truncate">{userProfile?.email || currentUser?.email}</span>
+                <span className="shrink-0 font-medium text-[#F2B544]">{planConfig.name}</span>
+              </div>
             </div>
           </div>
         </div>

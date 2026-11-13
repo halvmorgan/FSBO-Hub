@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   PropertyProfile,
   PhotoItem,
@@ -47,7 +47,7 @@ import { AdminPanel } from './components/admin/AdminPanel';
 import { HelpModal } from './components/common/HelpModal';
 import { NotificationBell } from './components/common/NotificationBell';
 import { uploadListingPhoto } from './lib/photoStorage';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from './lib/firebase';
 
 // 13 Original Sections
@@ -67,7 +67,7 @@ import { SectionClosing } from './components/sections/SectionClosing';
 import { SectionSettings } from './components/sections/SectionSettings';
 import { SectionHelp } from './components/sections/SectionHelp';
 
-import { CloudUpload, X, HelpCircle, Compass, AlertTriangle } from 'lucide-react';
+import { CloudUpload, X, HelpCircle, Compass, AlertTriangle, User, LogOut, ChevronDown } from 'lucide-react';
 import { PlanType } from './types/saas';
 
 import houseExteriorFront from './assets/images/house_exterior_front_1794286496562.jpg';
@@ -138,14 +138,16 @@ function AppContent() {
     importLocalDataToCloud,
     dismissLocalImportPrompt,
     grantUserPlan,
+    logout,
   } = useAuth();
 
   // Navigation State
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [currentView, setCurrentView] = useState<'app' | 'landing' | 'pricing' | 'terms' | 'privacy' | 'property'>('app');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('my-listing');
+  const [currentView, setCurrentView] = useState<'app' | 'landing' | 'pricing' | 'terms' | 'privacy' | 'property' | 'listing'>('app');
   const [publicPropertySlug, setPublicPropertySlug] = useState<string>('');
+  const [publicListingId, setPublicListingId] = useState<string>('');
 
-  // Modals
+  // Modals & Menus
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('signup');
   const [pendingPlan, setPendingPlan] = useState<PlanType | null>(() => {
@@ -153,7 +155,11 @@ function AppContent() {
   });
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [skippedWizard, setSkippedWizard] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const [loggedOutMessage, setLoggedOutMessage] = useState<string | null>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   // 1. Settings
   const [settings, setSettings] = useState<Settings>(() => {
@@ -161,10 +167,41 @@ function AppContent() {
     return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
   });
 
+  // Clean empty property template for real users (demo data only loaded in Demo Preview)
+  const BLANK_PROPERTY: PropertyProfile = {
+    ...DEFAULT_PROPERTY,
+    address: '',
+    city: '',
+    state: 'Michigan',
+    zip: '',
+    price: 0,
+    originalPrice: 0,
+    beds: 0,
+    bathsFull: 0,
+    bathsHalf: 0,
+    sqft: 0,
+    lotSize: '',
+    yearBuilt: 0,
+    taxes: 0,
+    schoolDistrict: '',
+    heating: '',
+    cooling: '',
+    garage: '',
+    basement: '',
+    roof: '',
+    upgrades: [],
+    specialNotes: ['', '', ''],
+    features: [],
+    walkthroughVideoUrl: '',
+    photos: [],
+    description: '',
+    setupComplete: false,
+  };
+
   // 2. Property Profile
   const [property, setProperty] = useState<PropertyProfile>(() => {
     const saved = localStorage.getItem('fsbo_property');
-    return saved ? JSON.parse(saved) : DEFAULT_PROPERTY;
+    return saved ? JSON.parse(saved) : BLANK_PROPERTY;
   });
 
   // 3. Photos (IndexedDB + fallback state)
@@ -202,23 +239,7 @@ function AppContent() {
     } catch (e) {
       console.warn('Could not load saved listing copy:', e);
     }
-    return {
-          tone: 'Warm',
-          headline: 'Custom Executive Home on Private Wooded Lot in Rochester Hills',
-          fullDescription: `Welcome home to 4288 Meadowview Drive, a meticulously maintained 4-bedroom executive residence nestled on a private wooded lot backing up to township green space.\n\nThe heart of the home is a remodeled chef's kitchen featuring quartz waterfall countertops, soft-close custom cabinetry, and premium stainless steel appliances. Solid hardwood floors run throughout the main living areas, complemented by abundant natural sunlight and an inviting gas fireplace.\n\nUpstairs, the expansive primary suite boasts a walk-in tile shower and dual vanity. The fully finished daylight basement offers an expansive recreation space, wet bar, and workshop. Outside, relax on the composite Trex deck overlooking the tranquil, fully fenced backyard. Located in the award-winning Rochester Community School district.`,
-          keyFactsBlock: `Price: $435,000\nBeds: 4 | Baths: 2 Full / 1 Half\nSq Ft: 2,450 Finished\nYear Built: 1998\nTaxes: $4,620/yr\nSchool District: Rochester Community Schools\nBasement: Finished Daylight with Wet Bar\nGarage: 2-Car Attached`,
-          upgradesListBlock: `• 2023: Full Kitchen Remodel with Quartz Waterfall Island\n• 2022: Architectural Dimensional Shingle Roof\n• 2021: High-Efficiency Furnace & Central Air Conditioning\n• 2020: Composite Trex Backyard Deck`,
-          marketplaceVersion: `🏡 FOR SALE BY OWNER: 4 Bed / 2.5 Bath in Rochester Hills!\n💰 $435,000 | 2,450 SqFt | Private Wooded Lot 🌳\n\n✨ Quartz Kitchen Remodel (2023)\n✨ Finished Daylight Basement with Bar\n✨ New Roof (2022) & HVAC (2021)\n✨ Rochester Community Schools\n\nPrivate tours available by appointment! Direct message for photos, video tour link, and pre-approval instructions.`,
-          craigslistVersion: `FOR SALE BY OWNER: 4288 MEADOWVIEW DR, ROCHESTER HILLS, MI\n\n- Asking Price: $435,000\n- 4 Bedrooms / 2.5 Bathrooms\n- 2,450 Finished Square Feet\n- Lot Size: 0.34 Acres (Wooded rear boundary)\n- Upgrades: New Roof (2022), New HVAC (2021), Remodeled Kitchen (2023)\n- Schools: Rochester Community Schools\n\nDirect contact with owners. Pre-approval letter required for private showings. Call or text (248) 555-0192 for appointment.`,
-          socialPostVersion: `We're officially listing our home for sale by owner! 🏡 4288 Meadowview Drive in Rochester Hills: 4 beds, 2.5 baths, gorgeous new kitchen, finished basement, and a quiet wooded lot. Check out our photo tour and please share with anyone looking to move to the area! ❤️`,
-          flyerTeaser: `Stunning 4-bedroom Rochester Hills home featuring a remodeled quartz kitchen and finished daylight basement on a private wooded lot. Offered directly by owner for $435,000 with transferable roof and HVAC warranties.`,
-          fairHousingAudit: {
-            isClean: true,
-            flaggedPhrases: [],
-            complianceNote: '100% Compliant. Focuses exclusively on physical home features and amenities.',
-          },
-          lastGenerated: '2026-11-09',
-        };
+    return null;
   });
 
   // 7. Sites
@@ -227,114 +248,60 @@ function AppContent() {
     return saved ? JSON.parse(saved) : DEFAULT_SITES;
   });
 
-  // 8. Showings
+  // 8. Showings (clean empty array for real users; demo data loaded only in Demo Preview)
   const [showings, setShowings] = useState<ShowingItem[]>(() => {
-    const saved = localStorage.getItem('fsbo_showings');
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            id: 'show-demo-1',
-            buyerName: 'Marcus & Elena Vance',
-            buyerPhone: '(248) 555-0142',
-            buyerEmail: 'elena.vance@gmail.com',
-            date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-            time: '14:00',
-            status: 'Confirmed',
-            hasPreApproval: true,
-            notes: 'Prequalified conventional $500k with Chase. Looking to move before winter.',
-            createdAt: new Date().toISOString(),
-          },
-          {
-            id: 'show-demo-2',
-            buyerName: 'Brian Kowalski',
-            buyerPhone: '(586) 555-0198',
-            buyerEmail: 'bkowalski@outlook.com',
-            date: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
-            time: '17:30',
-            status: 'Awaiting Pre-Approval',
-            hasPreApproval: false,
-            notes: 'Requested tour via website. Sent lender pre-approval reminder.',
-            createdAt: new Date().toISOString(),
-          },
-        ];
+    try {
+      const saved = localStorage.getItem('fsbo_showings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed)
+          ? parsed.filter((s: ShowingItem) => s.id !== 'show-demo-1' && s.id !== 'show-demo-2')
+          : [];
+      }
+    } catch {}
+    return [];
   });
 
   // 9. Open Houses
   const [openHouses, setOpenHouses] = useState<OpenHouseItem[]>(() => {
-    const saved = localStorage.getItem('fsbo_open_houses');
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            id: 'oh-demo-1',
-            date: new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0],
-            startTime: '13:00',
-            endTime: '16:00',
-            notes: 'First public weekend open house. Directional signs ready.',
-            checklist: {
-              'Place directional A-frame signs at neighborhood street corners': true,
-              'Print 20 copies of the full-color yard flyer': true,
-              'Set up sign-in sheet on kitchen island with pens': true,
-              'Turn on every interior light and open all window blinds': true,
-              'Play soft instrumental background music (lo-fi/jazz)': false,
-              'Set out bottled water and light pre-packaged refreshments': true,
-              'Lock away jewelry, prescription medications, and financial files': true,
-              'Turn on exterior porch lights': true,
-            },
-          },
-        ];
+    try {
+      const saved = localStorage.getItem('fsbo_open_houses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed)
+          ? parsed.filter((oh: OpenHouseItem) => oh.id !== 'oh-demo-1')
+          : [];
+      }
+    } catch {}
+    return [];
   });
 
   // 10. Visitor Log
   const [visitorLog, setVisitorLog] = useState<VisitorLogItem[]>(() => {
-    const saved = localStorage.getItem('fsbo_visitor_log');
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            id: 'vis-1',
-            name: 'Derek & Amanda Chen',
-            phone: '(248) 555-0131',
-            email: 'derek.chen@tech.com',
-            preApproved: true,
-            agentRepresented: false,
-            interestLevel: 'Hot',
-            followUpDate: new Date(Date.now() + 1 * 86400000).toISOString().split('T')[0],
-            notes: 'Loved the kitchen island and private backyard. Inquired about closing timeline.',
-          },
-        ];
+    try {
+      const saved = localStorage.getItem('fsbo_visitor_log');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed)
+          ? parsed.filter((v: VisitorLogItem) => v.id !== 'vis-1')
+          : [];
+      }
+    } catch {}
+    return [];
   });
 
-  // 11. Inquiries
+  // 11. Inquiries (clean empty array for real users; synced with Firestore /listings/{listingId}/inquiries)
   const [inquiries, setInquiries] = useState<InquiryItem[]>(() => {
-    const saved = localStorage.getItem('fsbo_inquiries');
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            id: 'inq-1',
-            name: 'Sarah Jenkins',
-            phone: '(248) 555-0129',
-            email: 'sarah.jenkins@gmail.com',
-            source: 'Zillow',
-            dateReceived: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-            message: 'Hi, we are pre-approved conventional and would love to see the house this Saturday afternoon. Is the basement finished?',
-            replied: false,
-            notes: '',
-          },
-          {
-            id: 'inq-2',
-            name: 'Mike Peterson',
-            phone: '(586) 555-0177',
-            email: 'mpeterson@live.com',
-            source: 'Facebook Marketplace',
-            dateReceived: new Date(Date.now() - 26 * 3600 * 1000).toISOString(),
-            message: 'Is this house still available? Are you open to working with buyer agents at 2.5%?',
-            replied: false,
-            notes: '',
-          },
-        ];
+    try {
+      const saved = localStorage.getItem('fsbo_inquiries');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed)
+          ? parsed.filter((i: InquiryItem) => i.id !== 'inq-1' && i.id !== 'inq-2')
+          : [];
+      }
+    } catch {}
+    return [];
   });
 
   // 12. Documents
@@ -345,26 +312,16 @@ function AppContent() {
 
   // 13. Offers
   const [offers, setOffers] = useState<OfferItem[]>(() => {
-    const saved = localStorage.getItem('fsbo_offers');
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            id: 'offer-1',
-            buyerName: 'Derek & Amanda Chen',
-            offerPrice: 438000,
-            financingType: 'Conventional',
-            downPaymentPct: 20,
-            earnestMoney: 10000,
-            contingencies: ['Inspection (7 days)', 'Financing (21 days)', 'Appraisal'],
-            closingDate: new Date(Date.now() + 35 * 86400000).toISOString().split('T')[0],
-            sellerConcessions: 2000,
-            estimatedClosingCosts: 6570,
-            netToSeller: 429430,
-            notes: 'Strong 20% down conventional pre-approval. Clean inspection request.',
-            status: 'Reviewing',
-          },
-        ];
+    try {
+      const saved = localStorage.getItem('fsbo_offers');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed)
+          ? parsed.filter((o: OfferItem) => o.id !== 'offer-1')
+          : [];
+      }
+    } catch {}
+    return [];
   });
 
   // 14. Closing Team
@@ -393,63 +350,138 @@ function AppContent() {
     return localStorage.getItem('fsbo_last_refresh') || new Date(Date.now() - 4 * 86400000).toISOString().split('T')[0];
   });
 
-  // Initial URL Routing Check
+  // Close top-right profile menu on outside click
   useEffect(() => {
-    const handleUrlRouting = () => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Initial URL Routing & Protected Route Back-Button Guard
+  useEffect(() => {
+    const handleUrlRouting = (popEvent?: PopStateEvent) => {
       const path = window.location.pathname;
+      if (path.startsWith('/listing/')) {
+        const lid = path.replace(/^\/listing\//, '').split('/')[0];
+        setPublicListingId(lid);
+        setCurrentView('listing');
+        return;
+      }
       if (path.startsWith('/p/')) {
         const slug = path.replace(/^\/p\//, '').split('/')[0];
         setPublicPropertySlug(slug);
         setCurrentView('property');
-      } else if (path === '/terms') {
+        return;
+      }
+      if (path === '/terms') {
         setCurrentView('terms');
-      } else if (path === '/privacy') {
+        return;
+      }
+      if (path === '/privacy') {
         setCurrentView('privacy');
-      } else if (path === '/pricing') {
+        return;
+      }
+      if (path === '/pricing') {
         setCurrentView('pricing');
-      } else if (path === '/admin') {
+        return;
+      }
+
+      const isProtectedPath =
+        path === '/admin' ||
+        path === '/account' ||
+        path === '/dashboard' ||
+        path === '/my-listing' ||
+        path === '/profile';
+
+      if (!currentUser && !demoMode) {
+        setCurrentView('landing');
+        // If user navigated to a protected path or pressed Back onto a protected history entry while logged out, send to Sign In
+        if (isProtectedPath || popEvent?.state?.protected) {
+          window.history.replaceState({ loggedOut: true }, '', '/');
+          setAuthModalMode('login');
+          setAuthModalOpen(true);
+        }
+        return;
+      }
+
+      // Signed-in user or demo preview
+      if (path === '/admin') {
         setActiveTab('admin');
         setCurrentView('app');
       } else if (path === '/account') {
         setActiveTab('account');
         setCurrentView('app');
+      } else if (path === '/dashboard') {
+        setActiveTab('dashboard');
+        setCurrentView('app');
       } else {
-        if (!currentUser && !demoMode) {
-          setCurrentView('landing');
-        } else {
-          setCurrentView('app');
-          setActiveTab('dashboard');
-        }
+        setCurrentView('app');
+        setActiveTab('my-listing');
       }
     };
 
     handleUrlRouting();
-    window.addEventListener('popstate', handleUrlRouting);
-    return () => window.removeEventListener('popstate', handleUrlRouting);
+    const onPopState = (e: PopStateEvent) => handleUrlRouting(e);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, [currentUser, demoMode]);
+
+  // Prevent browser bfcache from displaying stale protected screens after logout
+  useEffect(() => {
+    const onPageShow = () => {
+      const path = window.location.pathname;
+      const isPublic =
+        path.startsWith('/listing/') ||
+        path.startsWith('/p/') ||
+        path === '/pricing' ||
+        path === '/terms' ||
+        path === '/privacy';
+      if (!currentUser && !demoMode && !isPublic && currentView === 'app') {
+        setCurrentView('landing');
+        setAuthModalMode('login');
+        setAuthModalOpen(true);
+      }
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, [currentUser, demoMode, currentView]);
 
   // Check whether signed-in user has filled in their personalized home details / onboarding info
   const hasFilledInfo = Boolean(
+    userProfile?.setupComplete ||
     userProfile?.hasCompletedOnboarding ||
+    localStorage.getItem('fsbo_setup_complete') === 'true' ||
+    property.setupComplete ||
     (property.address && property.address !== '4288 Meadowview Drive' && property.price > 0)
   );
 
   const handleAuthSuccess = () => {
     setAuthModalOpen(false);
-    window.history.pushState({}, '', '/');
+    setLoggedOutMessage(null);
+    setSkippedWizard(false);
+    window.history.pushState({ protected: true }, '', '/');
     setCurrentView('app');
-    setActiveTab('dashboard');
-    if (!hasFilledInfo) {
-      setShowWizard(true);
+    setActiveTab('my-listing');
+  };
+
+  // Record protected history state whenever navigating inside authenticated app
+  const handleSelectAuthenticatedTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    if (currentUser && currentView === 'app') {
+      window.history.replaceState({ protected: true, tab }, '', window.location.pathname);
     }
   };
 
-  // If a signed-in user hasn't filled in their info yet, prompt the onboarding wizard immediately
+  // If a signed-in user hasn't completed setup yet (once userProfile finishes loading), open the setup form
   useEffect(() => {
-    if (currentUser && !authLoading && !hasFilledInfo) {
+    if (currentUser && !authLoading && userProfile && !hasFilledInfo && !skippedWizard) {
       setShowWizard(true);
     }
-  }, [currentUser, authLoading, hasFilledInfo]);
+  }, [currentUser, authLoading, userProfile, hasFilledInfo, skippedWizard]);
 
   // Sync activeProperty from Cloud into state
   useEffect(() => {
@@ -458,8 +490,114 @@ function AppContent() {
         ...prev,
         ...activeProperty,
       }));
+      if (Array.isArray(activeProperty.photos) && activeProperty.photos.length > 0) {
+        setPhotos(activeProperty.photos);
+      }
     }
   }, [activeProperty]);
+
+  // Helper to sync public listing document (/listings/{listingId}) for buyer view
+  const syncPublicListing = async (
+    propToSync: PropertyProfile,
+    photosToSync: PhotoItem[],
+    openHousesToSync: OpenHouseItem[]
+  ) => {
+    if (!currentUser) return;
+    const listingId = propToSync.id || activeProperty?.id || propToSync.publishedSlug || currentUser.uid;
+    if (!listingId) return;
+
+    try {
+      const publicPayload = {
+        id: listingId,
+        ownerUid: currentUser.uid,
+        address: propToSync.address || '',
+        city: propToSync.city || '',
+        state: propToSync.state || 'Michigan',
+        zip: propToSync.zip || '',
+        price: propToSync.price || 0,
+        beds: propToSync.beds || 0,
+        bathsFull: propToSync.bathsFull || 0,
+        bathsHalf: propToSync.bathsHalf || 0,
+        sqft: propToSync.sqft || 0,
+        lotSize: propToSync.lotSize || '',
+        yearBuilt: propToSync.yearBuilt || 0,
+        propertyType: 'Single Family',
+        garage: propToSync.garage || '',
+        heating: propToSync.heating || '',
+        cooling: propToSync.cooling || '',
+        basement: propToSync.basement || '',
+        roof: propToSync.roof || '',
+        taxes: propToSync.taxes || 0,
+        hoa: propToSync.hoa || { hasHoa: false, monthlyFee: 0, name: '' },
+        schoolDistrict: propToSync.schoolDistrict || '',
+        description: propToSync.description || listingCopy?.fullDescription || '',
+        features: propToSync.features || [],
+        upgrades: propToSync.upgrades || [],
+        photos: photosToSync.map((p, idx) => ({
+          id: p.id,
+          dataUrl: p.dataUrl,
+          caption: p.caption || '',
+          isCover: Boolean(p.isCover || idx === 0),
+          roomCategory: p.roomCategory || 'Exterior',
+          order: idx,
+        })),
+        openHouses: (openHousesToSync || []).map((oh) => ({
+          id: oh.id,
+          date: oh.date,
+          startTime: oh.startTime,
+          endTime: oh.endTime,
+          notes: oh.notes || '',
+        })),
+        published: Boolean(propToSync.published ?? true),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await setDoc(doc(db, 'listings', listingId), publicPayload, { merge: true });
+    } catch (err) {
+      console.warn('Could not sync public listing document:', err);
+    }
+  };
+
+  // Load real buyer leads/inquiries submitted to /listings/{listingId}/inquiries (1 read per load)
+  useEffect(() => {
+    const listingId = property.id || activeProperty?.id;
+    if (!currentUser || !listingId || demoMode) return;
+
+    async function loadBuyerInquiries() {
+      try {
+        const snap = await getDocs(collection(db, 'listings', listingId as string, 'inquiries'));
+        const cloudInquiries: InquiryItem[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          cloudInquiries.push({
+            id: data.id || d.id,
+            name: data.buyerName || 'Buyer',
+            email: data.buyerEmail || '',
+            phone: data.buyerPhone || '',
+            source: 'FSBO Listing Page',
+            dateReceived: data.createdAt || new Date().toISOString(),
+            message: data.message || '',
+            replied: Boolean(data.replied),
+            notes: data.interestType ? `Interest: ${data.interestType}` : '',
+          });
+        });
+
+        if (cloudInquiries.length > 0) {
+          setInquiries((prev) => {
+            const existingIds = new Set(prev.map((i) => i.id));
+            const merged = [...cloudInquiries.filter((c) => !existingIds.has(c.id)), ...prev];
+            return merged.sort(
+              (a, b) => new Date(b.dateReceived).getTime() - new Date(a.dateReceived).getTime()
+            );
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load listing inquiries:', err);
+      }
+    }
+
+    loadBuyerInquiries();
+  }, [currentUser, property.id, activeProperty?.id, demoMode]);
 
   // Clean up Stripe checkout callback parameters from the address bar (no client-side plan grants)
   useEffect(() => {
@@ -469,15 +607,16 @@ function AppContent() {
     }
   }, []);
 
-  // Load photos from IndexedDB on startup
+  // Load photos from IndexedDB on startup (no sample photos forced onto real users)
   useEffect(() => {
     const loadPhotos = async () => {
+      if (!currentUser && !demoMode) return;
       try {
         const dbPhotos = await getAllPhotosFromDB();
         const hasLegacyUnsplash = dbPhotos && dbPhotos.some((p: any) => p.dataUrl?.includes('unsplash'));
         if (dbPhotos && dbPhotos.length > 0 && !hasLegacyUnsplash) {
           setPhotos(dbPhotos);
-        } else {
+        } else if (demoMode) {
           for (const sp of SAMPLE_PHOTOS) {
             await savePhotoToDB(sp.id, sp.dataUrl, { caption: sp.caption, isCover: sp.isCover });
           }
@@ -485,74 +624,88 @@ function AppContent() {
         }
       } catch (err) {
         console.warn('Could not read IndexedDB photos:', err);
-        setPhotos(SAMPLE_PHOTOS);
       }
     };
     loadPhotos();
-  }, []);
+  }, [currentUser, demoMode]);
 
-  // Sync to LocalStorage
+  // Sync to LocalStorage ONLY when authenticated or in demo mode (never re-write after logout)
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_settings', JSON.stringify(settings));
-  }, [settings]);
+  }, [settings, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_property', JSON.stringify(property));
-  }, [property]);
+  }, [property, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_comps', JSON.stringify(comps));
-  }, [comps]);
+  }, [comps, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_price_history', JSON.stringify(priceHistory));
-  }, [priceHistory]);
+  }, [priceHistory, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     if (listingCopy) {
       localStorage.setItem('fsbo_listing_copy', JSON.stringify(listingCopy));
     }
-  }, [listingCopy]);
+  }, [listingCopy, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_sites', JSON.stringify(sites));
-  }, [sites]);
+  }, [sites, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_showings', JSON.stringify(showings));
-  }, [showings]);
+  }, [showings, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_open_houses', JSON.stringify(openHouses));
-  }, [openHouses]);
+  }, [openHouses, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_visitor_log', JSON.stringify(visitorLog));
-  }, [visitorLog]);
+  }, [visitorLog, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_inquiries', JSON.stringify(inquiries));
-  }, [inquiries]);
+  }, [inquiries, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_documents', JSON.stringify(documents));
-  }, [documents]);
+  }, [documents, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_offers', JSON.stringify(offers));
-  }, [offers]);
+  }, [offers, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_closing_team', JSON.stringify(closingTeam));
-  }, [closingTeam]);
+  }, [closingTeam, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_promote_groups', JSON.stringify(promoteGroups));
-  }, [promoteGroups]);
+  }, [promoteGroups, currentUser, demoMode]);
 
   useEffect(() => {
+    if (!currentUser && !demoMode) return;
     localStorage.setItem('fsbo_last_refresh', lastRefreshDate);
-  }, [lastRefreshDate]);
+  }, [lastRefreshDate, currentUser, demoMode]);
 
   // Dark mode class sync
   useEffect(() => {
@@ -636,7 +789,104 @@ function AppContent() {
     setProperty(newProp);
     if (currentUser) {
       await updateCurrentProperty(newProp);
+      await syncPublicListing(newProp, photos, openHouses);
     }
+  };
+
+  const handleUpdatePhotos = async (newPhotos: PhotoItem[]) => {
+    let processedPhotos = newPhotos;
+    if (currentUser) {
+      processedPhotos = await Promise.all(
+        newPhotos.map(async (p) => {
+          if (p.dataUrl && !p.dataUrl.startsWith('http') && !p.dataUrl.startsWith('/')) {
+            const url = await uploadListingPhoto(currentUser.uid, p.id, p.dataUrl);
+            return { ...p, dataUrl: url };
+          }
+          return p;
+        })
+      );
+    }
+    setPhotos(processedPhotos);
+    const updatedProp: PropertyProfile = {
+      ...property,
+      photos: processedPhotos,
+    };
+    setProperty(updatedProp);
+    if (currentUser) {
+      await updateCurrentProperty(updatedProp);
+      await syncPublicListing(updatedProp, processedPhotos, openHouses);
+    }
+  };
+
+  const handleLogout = async () => {
+    setProfileMenuOpen(false);
+    setShowWizard(false);
+    setAuthModalOpen(false);
+    setHelpModalOpen(false);
+    setDemoMode(false);
+    setSkippedWizard(false);
+
+    try {
+      await logout();
+    } catch (err) {
+      console.error('Error during logout:', err);
+    }
+
+    // Clear saved user & listing state from memory
+    setSettings(DEFAULT_SETTINGS);
+    setProperty(BLANK_PROPERTY);
+    setPhotos([]);
+    setListingCopy(null);
+    setShowings([]);
+    setOpenHouses([]);
+    setVisitorLog([]);
+    setInquiries([]);
+    setOffers([]);
+    setActiveTab('my-listing');
+    setLoggedOutMessage("You've been logged out.");
+
+    // Replace current history state so Back button cannot return to protected pages while signed out
+    window.history.replaceState({ loggedOut: true }, '', '/');
+    setCurrentView('landing');
+  };
+
+  const handleStartDemoPreview = async () => {
+    setLoggedOutMessage(null);
+    setProperty(DEFAULT_PROPERTY);
+    setPhotos(SAMPLE_PHOTOS);
+    for (const sp of SAMPLE_PHOTOS) {
+      await savePhotoToDB(sp.id, sp.dataUrl, { caption: sp.caption, isCover: sp.isCover });
+    }
+    setShowings([
+      {
+        id: 'show-demo-1',
+        date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+        time: '2:00 PM',
+        buyerName: 'Marcus & Elena Vance',
+        buyerPhone: '(248) 555-0192',
+        buyerEmail: 'vance.family@example.com',
+        hasPreApproval: true,
+        status: 'Confirmed',
+        notes: 'Pre-approved via Rocket Mortgage. Excited about backyard and new kitchen.',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setInquiries([
+      {
+        id: 'inq-1',
+        name: 'Sarah Jenkins',
+        email: 'sjenkins@example.com',
+        phone: '(586) 555-0144',
+        source: 'Zillow FSBO',
+        dateReceived: new Date().toISOString().split('T')[0],
+        message: 'Hi! Is the home still available? Can we schedule a private tour this Saturday?',
+        replied: false,
+        notes: 'Demo buyer inquiry',
+      },
+    ]);
+    setDemoMode(true);
+    setActiveTab('my-listing');
+    setCurrentView('app');
   };
 
   // Plan Checkout Initiation
@@ -690,6 +940,19 @@ function AppContent() {
       handleSelectPlan(target);
     }
   }, [currentUser, pendingPlan]);
+
+  // 0. Render Public Buyer Property Landing Page (/listing/:listingId)
+  if (currentView === 'listing' && publicListingId) {
+    return (
+      <PublicListingView
+        listingId={publicListingId}
+        onGoHome={() => {
+          window.history.pushState({}, '', '/');
+          setCurrentView(currentUser ? 'app' : 'landing');
+        }}
+      />
+    );
+  }
 
   // 1. Render Hosted Property Website (/p/:slug)
   if (currentView === 'property' && publicPropertySlug) {
@@ -826,11 +1089,15 @@ function AppContent() {
       <>
         <LandingPage
           saasConfig={saasConfig}
+          loggedOutMessage={loggedOutMessage}
+          onDismissLoggedOut={() => setLoggedOutMessage(null)}
           onStartFree={() => {
+            setLoggedOutMessage(null);
             setAuthModalMode('signup');
             setAuthModalOpen(true);
           }}
           onLogin={() => {
+            setLoggedOutMessage(null);
             setAuthModalMode('login');
             setAuthModalOpen(true);
           }}
@@ -846,7 +1113,7 @@ function AppContent() {
             window.history.pushState({}, '', '/privacy');
             setCurrentView('privacy');
           }}
-          onDemoPreview={() => setDemoMode(true)}
+          onDemoPreview={handleStartDemoPreview}
         />
 
         <AuthModal
@@ -859,41 +1126,51 @@ function AppContent() {
     );
   }
 
-  // 6. Authenticated FSBO Compass Dashboard
+  const profileDisplayName =
+    userProfile?.displayName ||
+    currentUser?.displayName ||
+    settings.sellerName ||
+    currentUser?.email?.split('@')[0] ||
+    'Seller';
+  const profileEmail = userProfile?.email || currentUser?.email || '';
+  const profileInitial = (profileDisplayName.trim().charAt(0) || 'S').toUpperCase();
+
+  // 6. Authenticated FSBO Compass Workspace
   return (
     <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100 flex flex-col lg:flex-row antialiased selection:bg-[#FF6B5A] selection:text-white font-sans">
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSelectAuthenticatedTab}
         readyScore={readyScore}
         openInquiriesCount={openInquiriesCount}
         settings={settings}
         onToggleDarkMode={handleToggleDarkMode}
         onOpenHelp={() => {
-          setActiveTab('help');
+          handleSelectAuthenticatedTab('help');
           setCurrentView('app');
         }}
         onOpenPricing={() => {
           window.history.pushState({}, '', '/pricing');
           setCurrentView('pricing');
         }}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Workspace */}
       <main className="flex-1 min-w-0 pb-20 lg:pb-12 overflow-y-auto">
         {/* Top App Bar */}
-        <header className="sticky top-0 z-10 bg-white/90 dark:bg-stone-900/90 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+        <header className="sticky top-12 lg:top-0 z-20 bg-white/90 dark:bg-stone-900/90 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
-                window.history.pushState({}, '', '/');
-                setActiveTab('dashboard');
+                window.history.pushState({ protected: true }, '', '/');
+                handleSelectAuthenticatedTab('my-listing');
                 setCurrentView('app');
               }}
-              className="text-left flex items-center gap-2 hover:opacity-80 transition-opacity focus:outline-none"
-              title="Go to Home Dashboard"
+              className="text-left flex items-center gap-2 hover:opacity-80 transition-opacity focus:outline-none cursor-pointer"
+              title="Go to My Listing"
             >
               <span className="font-heading font-extrabold text-sm text-[#0F2A44] dark:text-white hidden sm:inline-block">
                 {property.address || 'My FSBO Listing'}
@@ -912,7 +1189,7 @@ function AppContent() {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setHelpModalOpen(true)}
               className="p-2 text-stone-500 hover:text-[#0F2A44] dark:hover:text-white hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors text-xs font-semibold flex items-center gap-1.5"
@@ -922,7 +1199,75 @@ function AppContent() {
             </button>
 
             {/* Notification Bell */}
-            <NotificationBell onSelectTab={(tab) => setActiveTab(tab as ActiveTab)} />
+            <NotificationBell onSelectTab={(tab) => handleSelectAuthenticatedTab(tab as ActiveTab)} />
+
+            {/* Top-Right Profile Avatar & Dropdown Menu */}
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setProfileMenuOpen((prev) => !prev)}
+                aria-label="Open profile menu"
+                aria-expanded={profileMenuOpen}
+                className="flex items-center gap-1.5 p-1 rounded-full hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors focus:outline-none cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#0F2A44] to-[#1E6F80] text-white font-heading font-bold text-xs flex items-center justify-center shadow-sm ring-2 ring-[#FF6B5A]/30">
+                  {profileInitial}
+                </div>
+                <ChevronDown className="w-3.5 h-3.5 text-stone-500 hidden sm:block" />
+              </button>
+
+              {profileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-60 bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-800 py-2 z-50 animate-in fade-in duration-150">
+                  <div className="px-4 py-2.5 border-b border-stone-100 dark:border-stone-800">
+                    <div className="text-xs font-bold text-[#0F2A44] dark:text-white truncate">
+                      {profileDisplayName}
+                    </div>
+                    {profileEmail && (
+                      <div className="text-[11px] text-stone-500 dark:text-stone-400 truncate mt-0.5">
+                        {profileEmail}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        handleSelectAuthenticatedTab('account');
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <User className="w-4 h-4 text-[#0F2A44] dark:text-stone-400" />
+                      <span>Account &amp; Billing</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        setHelpModalOpen(true);
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <HelpCircle className="w-4 h-4 text-[#F2B544]" />
+                      <span>Help &amp; Support</span>
+                    </button>
+                  </div>
+
+                  <div className="pt-1 mt-1 border-t border-stone-100 dark:border-stone-800">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full px-4 py-2 text-left text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>Log Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -953,6 +1298,24 @@ function AppContent() {
           </div>
         )}
 
+        {activeTab === 'my-listing' ? (
+          <SectionMyListing
+            property={property}
+            photos={photos}
+            openHouses={openHouses}
+            inquiriesCount={inquiries.length}
+            isSellerView={true}
+            isTrial={userProfile?.plan === 'trial'}
+            onEditListing={() => setShowWizard(true)}
+            onNavigate={handleSelectAuthenticatedTab}
+            onAddInquiry={(inq) => setInquiries((prev) => [inq, ...prev])}
+            onOpenPricing={() => {
+              window.history.pushState({}, '', '/pricing');
+              setCurrentView('pricing');
+            }}
+            onAddPhotos={() => handleSelectAuthenticatedTab('photos')}
+          />
+        ) : (
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
           {activeTab === 'dashboard' && (
             <SectionDashboard
@@ -964,7 +1327,7 @@ function AppContent() {
               inquiries={inquiries}
               readyScore={readyScore}
               lastRefreshDate={lastRefreshDate}
-              onNavigate={setActiveTab}
+              onNavigate={handleSelectAuthenticatedTab}
             />
           )}
 
@@ -972,7 +1335,7 @@ function AppContent() {
             <SectionProfile
               property={property}
               onChange={handleUpdateProperty}
-              onNavigate={setActiveTab}
+              onNavigate={handleSelectAuthenticatedTab}
             />
           )}
 
@@ -981,7 +1344,7 @@ function AppContent() {
               property={property}
               photos={photos}
               onUpdateProperty={handleUpdateProperty}
-              onNavigate={setActiveTab}
+              onNavigate={handleSelectAuthenticatedTab}
             />
           )}
 
@@ -989,9 +1352,9 @@ function AppContent() {
             <SectionPhotos
               property={property}
               photos={photos}
-              onUpdatePhotos={setPhotos}
+              onUpdatePhotos={handleUpdatePhotos}
               onUpdateProperty={handleUpdateProperty}
-              onNavigate={setActiveTab}
+              onNavigate={handleSelectAuthenticatedTab}
             />
           )}
 
@@ -1004,7 +1367,7 @@ function AppContent() {
               onUpdateComps={setComps}
               onUpdatePriceHistory={setPriceHistory}
               onUpdateProperty={handleUpdateProperty}
-              onNavigate={setActiveTab}
+              onNavigate={handleSelectAuthenticatedTab}
             />
           )}
 
@@ -1050,7 +1413,12 @@ function AppContent() {
               visitorLog={visitorLog}
               settings={settings}
               onUpdateShowings={setShowings}
-              onUpdateOpenHouses={setOpenHouses}
+              onUpdateOpenHouses={(nextOpenHouses) => {
+                setOpenHouses(nextOpenHouses);
+                if (currentUser) {
+                  syncPublicListing(property, photos, nextOpenHouses);
+                }
+              }}
               onUpdateVisitorLog={setVisitorLog}
               onUpdateSettings={setSettings}
               onNavigate={setActiveTab}
@@ -1167,22 +1535,57 @@ function AppContent() {
             />
           )}
         </div>
+        )}
       </main>
 
-      {/* Onboarding Wizard Modal if open */}
+      {/* Onboarding / Edit Listing Wizard Modal */}
       {showWizard && (
         <OnboardingWizard
           property={property}
           photos={photos}
+          isEditing={hasFilledInfo}
           onComplete={async (updatedProp, updatedPhotos) => {
-            await handleUpdateProperty(updatedProp);
-            setPhotos(updatedPhotos);
+            // Upload photos to Firebase Storage if signed in
+            let uploadedPhotos = updatedPhotos;
+            if (currentUser) {
+              uploadedPhotos = await Promise.all(
+                updatedPhotos.map(async (p) => {
+                  if (p.dataUrl && !p.dataUrl.startsWith('http')) {
+                    const url = await uploadListingPhoto(currentUser.uid, p.id, p.dataUrl);
+                    return { ...p, dataUrl: url };
+                  }
+                  return p;
+                })
+              );
+            }
+
+            const listingId = updatedProp.id || activeProperty?.id || currentUser?.uid || 'my-home';
+            const finalProp: PropertyProfile = {
+              ...updatedProp,
+              id: listingId,
+              published: updatedProp.published ?? true,
+              setupComplete: true,
+              photos: uploadedPhotos,
+            };
+
+            setPhotos(uploadedPhotos);
+            setProperty(finalProp);
             setShowWizard(false);
-            await markOnboardingComplete();
-            setActiveTab('dashboard');
+            setSkippedWizard(false);
+
+            if (currentUser) {
+              await updateCurrentProperty(finalProp);
+              await syncPublicListing(finalProp, uploadedPhotos, openHouses);
+              await markOnboardingComplete();
+            }
+
+            handleSelectAuthenticatedTab('my-listing');
             setCurrentView('app');
           }}
-          onClose={() => setShowWizard(false)}
+          onClose={() => {
+            setShowWizard(false);
+            setSkippedWizard(true);
+          }}
         />
       )}
 

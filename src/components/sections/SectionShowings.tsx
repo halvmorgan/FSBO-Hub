@@ -324,7 +324,7 @@ export const SectionShowings: React.FC<SectionShowingsProps> = ({
 
           {showings.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
-              No private showings currently scheduled.
+              No showings yet.
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

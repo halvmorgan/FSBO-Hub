@@ -46,6 +46,7 @@ export interface PropertyProfile {
   publishedSlug?: string;
   description?: string;
   setupComplete?: boolean;
+  photos?: PhotoItem[];
 }
 
 export interface PhotoItem {

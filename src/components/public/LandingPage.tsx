@@ -15,7 +15,7 @@ import {
   Compass,
   Check,
   ChevronRight,
-  ExternalLink,
+  X,
 } from 'lucide-react';
 import { SaasConfig } from '../../types/saas';
 
@@ -27,6 +27,8 @@ interface LandingPageProps {
   onViewTerms: () => void;
   onViewPrivacy: () => void;
   onDemoPreview: () => void;
+  loggedOutMessage?: string | null;
+  onDismissLoggedOut?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
@@ -37,6 +39,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onViewTerms,
   onViewPrivacy,
   onDemoPreview,
+  loggedOutMessage,
+  onDismissLoggedOut,
 }) => {
   const faqs = [
     {
@@ -113,6 +117,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
       </header>
+
+      {/* Logged Out Banner */}
+      {loggedOutMessage && (
+        <div
+          role="status"
+          className="bg-emerald-50 dark:bg-emerald-950/60 border-b border-emerald-200 dark:border-emerald-800 px-4 py-2.5 text-xs text-emerald-900 dark:text-emerald-200"
+        >
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 font-semibold">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{loggedOutMessage}</span>
+            </div>
+            {onDismissLoggedOut && (
+              <button
+                type="button"
+                onClick={onDismissLoggedOut}
+                className="p-1 rounded-lg hover:bg-emerald-200/50 dark:hover:bg-emerald-800/50 text-emerald-700 dark:text-emerald-300 transition-colors"
+                aria-label="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-gradient-to-r from-[#0F2A44] via-[#143E5E] to-[#1E6F80] text-white py-16 sm:py-24 px-4 sm:px-6 lg:px-8">

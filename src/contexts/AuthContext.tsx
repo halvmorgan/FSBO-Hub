@@ -12,6 +12,7 @@ import {
   signOut as fbSignOut,
   sendPasswordResetEmail,
   sendEmailVerification,
+  updateProfile,
 } from 'firebase/auth';
 import {
   doc,
@@ -37,7 +38,7 @@ import {
 } from '../types/saas';
 import { PropertyProfile, PhotoItem } from '../types';
 import { DEFAULT_PROPERTY } from '../lib/defaults';
-import { getAllPhotosFromDB } from '../lib/indexedDb';
+import { getAllPhotosFromDB, clearAllDB } from '../lib/indexedDb';
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
@@ -174,6 +175,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           planStatus: 'trialing',
           trialEndsAt: trialEnd,
           aiCreditsUsed: 0,
+          hasCompletedOnboarding: false,
+          setupComplete: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -181,10 +184,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await setDoc(userRef, newProfile);
         setUserProfile(newProfile);
 
-        // Seed initial property
+        // Seed clean blank initial property for real new users (no fake sample data)
         const initialProp: PropertyProfile = {
           ...DEFAULT_PROPERTY,
-          address: '4288 Meadowview Drive',
+          address: '',
+          city: '',
+          state: 'Michigan',
+          zip: '',
+          price: 0,
+          originalPrice: 0,
+          beds: 0,
+          bathsFull: 0,
+          bathsHalf: 0,
+          sqft: 0,
+          lotSize: '',
+          yearBuilt: 0,
+          taxes: 0,
+          schoolDistrict: '',
+          heating: '',
+          cooling: '',
+          garage: '',
+          basement: '',
+          roof: '',
+          upgrades: [],
+          specialNotes: ['', '', ''],
+          features: [],
+          walkthroughVideoUrl: '',
+          setupComplete: false,
         };
         const propRef = doc(collection(db, 'users', fbUser.uid, 'properties'));
         await setDoc(propRef, { ...initialProp, id: propRef.id, ownerUid: fbUser.uid });
@@ -374,6 +400,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signupWithEmail = async (email: string, pass: string, name?: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     if (cred.user) {
+      if (name && name.trim()) {
+        await updateProfile(cred.user, { displayName: name.trim() }).catch(() => {});
+      }
       // Send verification email
       sendEmailVerification(cred.user).catch(() => {});
     }
@@ -406,7 +435,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await fbSignOut(auth);
+    try {
+      await fbSignOut(auth);
+    } catch (err) {
+      console.error('Firebase signOut error:', err);
+    }
+
+    // Clear saved user and listing data from localStorage, sessionStorage, and IndexedDB
+    try {
+      localStorage.clear();
+    } catch {}
+    try {
+      sessionStorage.clear();
+    } catch {}
+    clearAllDB().catch(() => {});
+
+    // Clear all auth and listing state from memory
+    setCurrentUser(null);
+    setUserProfile(null);
+    setUserProperties([]);
+    setActivePropertyIdState(null);
+    setNotifications([]);
+    setLoadError(null);
+    setHasLocalDataToImport(false);
   };
 
   // Create new property (gated by plan limit)

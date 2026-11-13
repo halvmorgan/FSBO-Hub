@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { PropertyProfile, PhotoItem, OpenHouseItem } from '../../types';
-import { DEFAULT_PROPERTY } from '../../lib/defaults';
 import { SectionMyListing } from '../sections/SectionMyListing';
 import { Compass, AlertCircle, ArrowLeft } from 'lucide-react';
 
@@ -42,7 +41,28 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
         if (snap.exists() && isMounted) {
           const data = snap.data() as any;
           const loadedProp: PropertyProfile = {
-            ...DEFAULT_PROPERTY,
+            address: '',
+            city: '',
+            state: '',
+            zip: '',
+            price: 0,
+            beds: 0,
+            bathsFull: 0,
+            bathsHalf: 0,
+            sqft: 0,
+            lotSize: '',
+            yearBuilt: 0,
+            taxes: 0,
+            hoa: { hasHoa: false, monthlyFee: 0, name: '' },
+            schoolDistrict: '',
+            heating: '',
+            cooling: '',
+            garage: '',
+            basement: '',
+            roof: '',
+            upgrades: [],
+            specialNotes: [],
+            features: [],
             ...data,
             id: snap.id,
           };

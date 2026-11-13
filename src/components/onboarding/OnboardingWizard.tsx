@@ -1,25 +1,28 @@
 import React, { useState } from 'react';
 import { PropertyProfile, PhotoItem } from '../../types';
-import { MapPin, Camera, Home, Compass, Calendar, ArrowRight, ArrowLeft, Check, Sparkles, Upload } from 'lucide-react';
+import { MapPin, Camera, Home, Compass, Calendar, ArrowRight, ArrowLeft, Check, Sparkles, Upload, X, Loader2 } from 'lucide-react';
 import { savePhotoToDB } from '../../lib/indexedDb';
 import { US_STATES, detectStateFromAddress } from '../../lib/stateDisclosures';
 
 interface OnboardingWizardProps {
   property: PropertyProfile;
   photos: PhotoItem[];
-  onComplete: (updatedProperty: PropertyProfile, updatedPhotos: PhotoItem[]) => void;
+  isEditing?: boolean;
+  onComplete: (updatedProperty: PropertyProfile, updatedPhotos: PhotoItem[]) => Promise<void> | void;
   onClose: () => void;
 }
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   property,
   photos,
+  isEditing = false,
   onComplete,
   onClose,
 }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<PropertyProfile>({ ...property });
   const [wizardPhotos, setWizardPhotos] = useState<PhotoItem[]>([...photos]);
+  const [saving, setSaving] = useState(false);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
@@ -47,8 +50,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     }
   };
 
-  const handleFinish = () => {
-    onComplete(formData, wizardPhotos);
+  const handleFinish = async () => {
+    setSaving(true);
+    try {
+      await onComplete(formData, wizardPhotos);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -56,33 +64,48 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
       <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">
         {/* Top Header */}
         <div className="bg-gradient-to-r from-[#0F2A44] to-[#1E6F80] p-6 text-white text-center relative">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute top-4 right-4 p-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-white/90 text-xs font-semibold mb-2">
             <Compass className="w-3.5 h-3.5 text-[#F2B544]" />
-            <span>Welcome to FSBO Compass</span>
+            <span>{isEditing ? 'Edit Property Listing' : 'Welcome to FSBO Compass'}</span>
           </div>
-          <h2 className="text-2xl font-bold font-heading">Let's set up your home sale</h2>
+          <h2 className="text-2xl font-bold font-heading">
+            {isEditing ? 'Update your property details' : "Let's set up your home sale"}
+          </h2>
           <p className="text-xs text-slate-200 mt-1 max-w-md mx-auto">
-            Takes less than 2 minutes. You can change everything later whenever you want.
+            {isEditing
+              ? 'Save your changes anytime to update your My Listing page.'
+              : 'Takes less than 2 minutes. You can change everything later whenever you want.'}
           </p>
 
           {/* Stepper Dots */}
           <div className="flex items-center justify-center gap-2 mt-5">
             {[1, 2, 3, 4].map((s) => (
-              <div
+              <button
+                type="button"
                 key={s}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                onClick={() => setStep(s)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
                   step === s
                     ? 'bg-[#FF6B5A] text-white shadow'
                     : step > s
                     ? 'bg-[#1FA67A] text-white'
-                    : 'bg-white/10 text-slate-300'
+                    : 'bg-white/10 text-slate-300 hover:bg-white/20'
                 }`}
               >
                 {step > s ? <Check className="w-3 h-3" /> : <span>{s}</span>}
                 <span className="hidden sm:inline">
-                  {s === 1 ? 'Address' : s === 2 ? 'Photos' : s === 3 ? 'Basic Facts' : 'Target Date'}
+                  {s === 1 ? 'Address' : s === 2 ? 'Photos' : s === 3 ? 'Basic Facts' : 'Description & Date'}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -298,6 +321,18 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
                   />
                 </div>
+                <div className="col-span-2 sm:col-span-3">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Lot Size (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.lotSize || ''}
+                    onChange={(e) => setFormData({ ...formData, lotSize: e.target.value })}
+                    placeholder="e.g. 0.34 acres or 7,500 sq ft"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -306,26 +341,41 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-[#0F2A44] dark:text-white font-bold text-lg mb-1">
                 <Calendar className="w-5 h-5 text-[#FF6B5A]" />
-                <span>Step 4: Target List Date</span>
+                <span>Step 4: Description & Target Date</span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                When are you aiming to go live with your listing and yard sign? Having a target date keeps your prep on track.
+                Add a short overview of what buyers will love about your home and your target list date.
               </p>
 
-              <div className="pt-2">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Target Live Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.targetListDate}
-                  onChange={(e) => setFormData({ ...formData, targetListDate: e.target.value })}
-                  className="w-full max-w-xs px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
-                />
+              <div className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Property Description
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={formData.description || ''}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Tell buyers about recent updates, favorite rooms, neighborhood highlights, and yard space..."
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Target Live Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.targetListDate}
+                    onChange={(e) => setFormData({ ...formData, targetListDate: e.target.value })}
+                    className="w-full max-w-xs px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-200 mt-4 text-xs">
-                <strong>You're ready!</strong> Next, we'll calculate your circular Ready-to-List score, show your 3 highest-priority tasks, and generate your custom property website.
+                <strong>You're ready!</strong> Next, you'll see your live buyer-facing property landing page, where you can preview, share your link, or explore all FSBO tools.
               </div>
             </div>
           )}
@@ -349,12 +399,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 onClick={onClose}
                 className="text-xs text-slate-500 hover:underline"
               >
-                Skip for now
+                {isEditing ? 'Cancel' : 'Skip for now'}
               </button>
             )}
           </div>
 
-          <div>
+          <div className="flex items-center gap-2">
+            {isEditing && step < 4 && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleFinish}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 transition-all shadow-sm disabled:opacity-60"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+              </button>
+            )}
             {step < 4 ? (
               <button
                 type="button"
@@ -367,11 +428,21 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             ) : (
               <button
                 type="button"
+                disabled={saving}
                 onClick={handleFinish}
-                className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-lg shadow-[#FF6B5A]/25"
+                className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-lg shadow-[#FF6B5A]/25 disabled:opacity-60"
               >
-                Enter FSBO Compass
-                <Check className="w-3.5 h-3.5" />
+                {saving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving Listing...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>{isEditing ? 'Save & View My Listing' : 'Save & View My Listing'}</span>
+                    <Check className="w-3.5 h-3.5" />
+                  </>
+                )}
               </button>
             )}
           </div>

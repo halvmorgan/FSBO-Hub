@@ -199,7 +199,7 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
     <div className="min-h-screen bg-slate-50 dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100 font-sans pb-16">
       {/* 1. SELLER BAR (Only visible to the signed-in seller) */}
       {isSellerView && (
-        <aside aria-label="Seller Controls" className="sticky top-0 z-30 bg-[#0F2A44] text-white px-4 py-2.5 shadow-md border-b border-white/10">
+        <aside aria-label="Seller Controls" className="relative z-10 bg-[#0F2A44] text-white px-4 py-2.5 shadow-md border-b border-white/10">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -637,34 +637,44 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                       <span className="text-stone-400">Full Bathrooms:</span>
                       <strong className="text-stone-800 dark:text-white">{property.bathsFull || 0}</strong>
                     </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Half Bathrooms:</span>
-                      <strong className="text-stone-800 dark:text-white">{property.bathsHalf || 0}</strong>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Finished Sq Ft:</span>
-                      <strong className="text-stone-800 dark:text-white">
-                        {property.sqft ? `${property.sqft.toLocaleString()} sq ft` : '—'}
-                      </strong>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Basement:</span>
-                      <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
-                        {property.basement || 'Standard'}
-                      </strong>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Heating:</span>
-                      <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
-                        {property.heating || 'Forced Air'}
-                      </strong>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Cooling:</span>
-                      <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
-                        {property.cooling || 'Central Air'}
-                      </strong>
-                    </li>
+                    {property.bathsHalf ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Half Bathrooms:</span>
+                        <strong className="text-stone-800 dark:text-white">{property.bathsHalf}</strong>
+                      </li>
+                    ) : null}
+                    {property.sqft ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Finished Sq Ft:</span>
+                        <strong className="text-stone-800 dark:text-white">
+                          {property.sqft.toLocaleString()} sq ft
+                        </strong>
+                      </li>
+                    ) : null}
+                    {property.basement ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Basement:</span>
+                        <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
+                          {property.basement}
+                        </strong>
+                      </li>
+                    ) : null}
+                    {property.heating ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Heating:</span>
+                        <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
+                          {property.heating}
+                        </strong>
+                      </li>
+                    ) : null}
+                    {property.cooling ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Cooling:</span>
+                        <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
+                          {property.cooling}
+                        </strong>
+                      </li>
+                    ) : null}
                   </ul>
                 </div>
 
@@ -679,22 +689,28 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                       <span className="text-stone-400">Property Type:</span>
                       <strong className="text-stone-800 dark:text-white">Single Family</strong>
                     </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Lot Size:</span>
-                      <strong className="text-stone-800 dark:text-white">{property.lotSize || 'Standard'}</strong>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Garage:</span>
-                      <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
-                        {property.garage || 'Attached'}
-                      </strong>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Roof:</span>
-                      <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
-                        {property.roof || 'Asphalt Shingle'}
-                      </strong>
-                    </li>
+                    {property.lotSize ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Lot Size:</span>
+                        <strong className="text-stone-800 dark:text-white">{property.lotSize}</strong>
+                      </li>
+                    ) : null}
+                    {property.garage ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Garage:</span>
+                        <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
+                          {property.garage}
+                        </strong>
+                      </li>
+                    ) : null}
+                    {property.roof ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Roof:</span>
+                        <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
+                          {property.roof}
+                        </strong>
+                      </li>
+                    ) : null}
                   </ul>
                 </div>
 
@@ -705,28 +721,34 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                     <span>Other & Financial</span>
                   </h4>
                   <ul className="space-y-2 text-stone-600 dark:text-stone-300">
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Year Built:</span>
-                      <strong className="text-stone-800 dark:text-white">{property.yearBuilt || '—'}</strong>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">Annual Taxes:</span>
-                      <strong className="text-stone-800 dark:text-white">
-                        {property.taxes ? `$${property.taxes.toLocaleString()}/yr` : '—'}
-                      </strong>
-                    </li>
+                    {property.yearBuilt ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Year Built:</span>
+                        <strong className="text-stone-800 dark:text-white">{property.yearBuilt}</strong>
+                      </li>
+                    ) : null}
+                    {property.taxes ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">Annual Taxes:</span>
+                        <strong className="text-stone-800 dark:text-white">
+                          ${property.taxes.toLocaleString()}/yr
+                        </strong>
+                      </li>
+                    ) : null}
                     <li className="flex justify-between">
                       <span className="text-stone-400">HOA Fee:</span>
                       <strong className="text-stone-800 dark:text-white">
                         {property.hoa?.hasHoa ? `$${property.hoa.monthlyFee}/mo` : 'No HOA'}
                       </strong>
                     </li>
-                    <li className="flex justify-between">
-                      <span className="text-stone-400">School District:</span>
-                      <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
-                        {property.schoolDistrict || 'Local Public'}
-                      </strong>
-                    </li>
+                    {property.schoolDistrict ? (
+                      <li className="flex justify-between">
+                        <span className="text-stone-400">School District:</span>
+                        <strong className="text-stone-800 dark:text-white truncate max-w-[120px]">
+                          {property.schoolDistrict}
+                        </strong>
+                      </li>
+                    ) : null}
                   </ul>
                 </div>
               </div>
@@ -777,37 +799,50 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
             )}
 
             {/* MAP SECTION */}
-            <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-[#FF6B5A]/15 text-[#FF6B5A] flex items-center justify-center">
-                    <MapPin className="w-4 h-4" />
+            {(fullAddress || isSellerView) && (
+              <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-[#FF6B5A]/15 text-[#FF6B5A] flex items-center justify-center">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <h3 className="text-xl font-bold font-heading text-[#0F2A44] dark:text-white">
+                      Neighborhood Location
+                    </h3>
                   </div>
-                  <h3 className="text-xl font-bold font-heading text-[#0F2A44] dark:text-white">
-                    Neighborhood Location
-                  </h3>
+                  {(property.city || property.state) && (
+                    <span className="text-xs text-stone-500 font-medium">
+                      {[property.city, property.state].filter(Boolean).join(', ')}
+                    </span>
+                  )}
                 </div>
-                <span className="text-xs text-stone-500 font-medium">{property.city}, {property.state}</span>
-              </div>
 
-              {/* Google Map Embed */}
-              <div className="w-full h-72 sm:h-80 rounded-2xl overflow-hidden border border-stone-200 dark:border-stone-800 shadow-inner relative">
-                <iframe
-                  title="Property Location Map"
-                  width="100%"
-                  height="100%"
-                  style={{ border: 0 }}
-                  loading="lazy"
-                  allowFullScreen
-                  src={`https://maps.google.com/maps?q=${encodeURIComponent(
-                    fullAddress || 'Rochester Hills, Michigan'
-                  )}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
-                />
+                {fullAddress ? (
+                  <>
+                    <div className="w-full h-72 sm:h-80 rounded-2xl overflow-hidden border border-stone-200 dark:border-stone-800 shadow-inner relative">
+                      <iframe
+                        title="Property Location Map"
+                        width="100%"
+                        height="100%"
+                        style={{ border: 0 }}
+                        loading="lazy"
+                        allowFullScreen
+                        src={`https://maps.google.com/maps?q=${encodeURIComponent(
+                          fullAddress
+                        )}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
+                      />
+                    </div>
+                    <p className="text-xs text-stone-400 text-center">
+                      Pin indicates approximate location for privacy. Private showings scheduled by owner appointment.
+                    </p>
+                  </>
+                ) : (
+                  <div className="p-6 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-dashed border-stone-300 dark:border-stone-700 text-center text-xs text-stone-500">
+                    Add your property address to display the neighborhood map to buyers.
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-stone-400 text-center">
-                Pin indicates approximate location for privacy. Private showings scheduled by owner appointment.
-              </p>
-            </div>
+            )}
           </div>
 
           {/* Right Column (4 cols): Sticky Contact Owner Card */}

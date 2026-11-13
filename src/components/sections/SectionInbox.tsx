@@ -263,7 +263,7 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
           <div className="lg:col-span-5 space-y-2 max-h-[600px] overflow-y-auto pr-1">
             {inquiries.length === 0 ? (
               <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
-                No buyer inquiries yet.
+                No inquiries yet.
               </div>
             ) : (
               inquiries.map((inq) => {
