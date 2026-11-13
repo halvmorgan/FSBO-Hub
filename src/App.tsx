@@ -1079,6 +1079,13 @@ function AppContent() {
         >
           Try Again
         </button>
+        <button
+          type="button"
+          onClick={() => logout()}
+          className="mt-3 text-xs font-semibold text-slate-500 hover:text-[#FF6B5A] underline"
+        >
+          Log Out
+        </button>
       </div>
     );
   }

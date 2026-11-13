@@ -240,16 +240,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err: any) {
       console.warn('Failed to load user profile:', err);
-      setLoadError('Failed to load your property and account info. Please check your connection and try again.');
-      handleFirestoreError(err, OperationType.GET, `users/${fbUser.uid}`);
+      setLoadError(`Failed to load your property and account info. Please check your connection and try again. (Details: ${err?.code || err?.message || String(err)})`);
+      try {
+        handleFirestoreError(err, OperationType.GET, `users/${fbUser.uid}`);
+      } catch (logged) {
+        // handleFirestoreError always throws; swallow here so loading can finish and the error screen shows
+      }
     }
   };
 
   const retryLoad = async () => {
     if (auth.currentUser) {
       setLoading(true);
-      await fetchUserProfile(auth.currentUser);
-      setLoading(false);
+      try {
+        await fetchUserProfile(auth.currentUser);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -287,17 +294,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setCurrentUser(fbUser);
 
-      if (fbUser) {
-        await fetchUserProfile(fbUser);
-      } else {
-        setUserProfile(null);
-        setUserProperties([]);
-        setActivePropertyIdState(null);
-        setNotifications([]);
-        setLoadError(null);
+      try {
+        if (fbUser) {
+          // Safety net: never leave the user stuck on the loading screen
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            fetchUserProfile(fbUser),
+            new Promise<void>((resolve) => {
+              timer = setTimeout(() => {
+                setLoadError('Loading your account is taking too long. Please check your connection and try again.');
+                resolve();
+              }, 15000);
+            }),
+          ]);
+          if (timer) clearTimeout(timer);
+        } else {
+          setUserProfile(null);
+          setUserProperties([]);
+          setActivePropertyIdState(null);
+          setNotifications([]);
+          setLoadError(null);
+        }
+      } catch (err) {
+        console.error('Auth state handling failed:', err);
+        setLoadError(`Failed to load your property and account info. Please try again. (Details: ${(err as any)?.code || (err as any)?.message || String(err)})`);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return () => unsub();
