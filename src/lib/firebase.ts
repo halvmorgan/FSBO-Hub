@@ -1,13 +1,21 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 // Export Firestore with designated database ID as mandated by skill
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// ignoreUndefinedProperties: skip blank (undefined) fields instead of rejecting the whole save with "invalid-argument"
+export const db = (() => {
+  try {
+    return initializeFirestore(app, { ignoreUndefinedProperties: true }, firebaseConfig.firestoreDatabaseId);
+  } catch {
+    // Already initialized (e.g. hot reload) -- reuse the existing instance
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+})();
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
