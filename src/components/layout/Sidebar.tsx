@@ -99,45 +99,230 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const creditsMax = planConfig.aiCreditsMonthly;
   const creditsPercent = Math.min(100, Math.round((creditsUsed / creditsMax) * 100));
 
-  const navItems: NavItem[] = [
-    { id: 'my-listing', label: 'My Listing', icon: Home, badge: 'Live', badgeColor: 'bg-emerald-500 text-white' },
-    { id: 'dashboard', label: 'Home Dashboard', icon: LayoutDashboard },
-    { id: 'profile', label: 'Property Profile', icon: Building2 },
-    { id: 'ai-finder', label: 'AI Feature Finder', icon: Sparkles, badge: 'Gemini', badgeColor: 'bg-[#F2B544] text-[#0F2A44]' },
-    { id: 'photos', label: 'Photos & Studio', icon: Camera },
-    { id: 'pricing', label: 'Pricing & Comps', icon: DollarSign },
-    { id: 'listing', label: 'Listing Writer', icon: FileText, badge: 'Fair Housing', badgeColor: 'bg-emerald-500 text-white' },
-    { id: 'sites', label: 'Listing Sites', icon: Share2 },
-    { id: 'website', label: 'Property Website', icon: Globe },
-    { id: 'showings', label: 'Showings & Open House', icon: Calendar },
-    {
-      id: 'inbox',
-      label: 'Inquiries Inbox',
-      icon: Inbox,
-      badge: openInquiriesCount > 0 ? openInquiriesCount : undefined,
-      badgeColor: 'bg-[#FF6B5A] text-white',
-    },
-    { id: 'promote', label: 'Promote & Social', icon: Megaphone },
-    { id: 'refresh', label: 'Refresh Planner', icon: RefreshCw },
-    { id: 'closing', label: 'Documents & Closing', icon: CheckCircle2 },
-    { id: 'account', label: 'Account & Billing', icon: User },
-    { id: 'settings', label: 'Settings & Backup', icon: SettingsIcon },
-  ];
+  type SectionId = 'my-listing-section' | 'price-market-section' | 'buyers-showings-section' | 'closing-account-section';
 
-  if (userProfile?.role === 'admin') {
-    navItems.push({
-      id: 'admin',
-      label: 'Admin Panel',
-      icon: ShieldAlert,
-      badge: 'Admin',
-      badgeColor: 'bg-amber-400 text-stone-900',
-    });
+  interface SidebarSection {
+    id: SectionId;
+    title: string;
+    icon: React.ElementType;
+    items: NavItem[];
   }
 
+  const baseSections: SidebarSection[] = [
+    {
+      id: 'my-listing-section',
+      title: 'My Listing',
+      icon: Home,
+      items: [
+        { id: 'my-listing', label: 'Listing Page', icon: Home, badge: 'Live', badgeColor: 'bg-emerald-500 text-white' },
+        { id: 'dashboard', label: 'Home Dashboard', icon: LayoutDashboard },
+        { id: 'profile', label: 'Property Profile', icon: Building2 },
+        { id: 'website', label: 'Property Website', icon: Globe },
+        { id: 'photos', label: 'Photos & Studio', icon: Camera },
+        { id: 'ai-finder', label: 'Feature Finder', icon: Sparkles },
+      ],
+    },
+    {
+      id: 'price-market-section',
+      title: 'Price & Market',
+      icon: DollarSign,
+      items: [
+        { id: 'pricing', label: 'Pricing & Comps', icon: DollarSign },
+        { id: 'listing', label: 'Listing Writer', icon: FileText, badge: 'Fair Housing', badgeColor: 'bg-emerald-500 text-white' },
+        { id: 'sites', label: 'Listing Sites', icon: Share2 },
+        { id: 'promote', label: 'Promote & Social', icon: Megaphone },
+        { id: 'refresh', label: 'Refresh Planner', icon: RefreshCw },
+      ],
+    },
+    {
+      id: 'buyers-showings-section',
+      title: 'Buyers & Showings',
+      icon: Calendar,
+      items: [
+        { id: 'showings', label: 'Showings & Open House', icon: Calendar },
+        {
+          id: 'inbox',
+          label: 'Inquiries Inbox',
+          icon: Inbox,
+          badge: openInquiriesCount > 0 ? openInquiriesCount : undefined,
+          badgeColor: 'bg-[#FF6B5A] text-white',
+        },
+      ],
+    },
+    {
+      id: 'closing-account-section',
+      title: 'Closing & Account',
+      icon: CheckCircle2,
+      items: [
+        { id: 'closing', label: 'Documents & Closing', icon: CheckCircle2 },
+        { id: 'account', label: 'Account & Billing', icon: User },
+        { id: 'settings', label: 'Settings & Backup', icon: SettingsIcon },
+        ...(userProfile?.role === 'admin'
+          ? [
+              {
+                id: 'admin' as ActiveTab,
+                label: 'Admin Panel',
+                icon: ShieldAlert,
+                badge: 'Admin',
+                badgeColor: 'bg-amber-400 text-stone-900',
+              },
+            ]
+          : []),
+      ],
+    },
+  ];
+
+  const findSectionForTab = (tab: ActiveTab): SectionId | null => {
+    const found = baseSections.find((sec) => sec.items.some((item) => item.id === tab));
+    return found ? found.id : null;
+  };
+
+  const OPEN_SECTION_STORAGE_KEY = 'fsbo_sidebar_open_section';
+
+  const [openSection, setOpenSection] = useState<SectionId | null>(() => {
+    try {
+      const saved = localStorage.getItem(OPEN_SECTION_STORAGE_KEY);
+      if (saved === '__closed__') return null;
+      if (saved && baseSections.some((s) => s.id === saved)) {
+        return saved as SectionId;
+      }
+    } catch {}
+    return findSectionForTab(activeTab) || 'my-listing-section';
+  });
+
+  const prevActiveTabRef = useRef<ActiveTab>(activeTab);
+
+  // Automatically open the section containing the current page when navigating to a tab
+  useEffect(() => {
+    if (prevActiveTabRef.current !== activeTab) {
+      prevActiveTabRef.current = activeTab;
+      const targetSection = findSectionForTab(activeTab);
+      if (targetSection) {
+        setOpenSection(targetSection);
+        try {
+          localStorage.setItem(OPEN_SECTION_STORAGE_KEY, targetSection);
+        } catch {}
+      }
+    }
+  }, [activeTab]);
+
+  const handleToggleSection = (sectionId: SectionId) => {
+    setOpenSection((prev) => {
+      const next = prev === sectionId ? null : sectionId;
+      try {
+        localStorage.setItem(OPEN_SECTION_STORAGE_KEY, next ?? '__closed__');
+      } catch {}
+      return next;
+    });
+  };
+
   const handleSelectTab = (tab: ActiveTab) => {
+    const targetSection = findSectionForTab(tab);
+    if (targetSection) {
+      setOpenSection(targetSection);
+      try {
+        localStorage.setItem(OPEN_SECTION_STORAGE_KEY, targetSection);
+      } catch {}
+    }
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
+
+  const renderCollapsibleSections = (isMobile = false) => (
+    <div className="space-y-1.5">
+      {baseSections.map((section) => {
+        const SectionIcon = section.icon;
+        const isOpen = openSection === section.id;
+        const containsActive = section.items.some((item) => item.id === activeTab);
+        const hasPendingBadge = section.items.some((item) => typeof item.badge === 'number' && item.badge > 0);
+
+        return (
+          <div key={section.id} className="select-none">
+            <button
+              type="button"
+              onClick={() => handleToggleSection(section.id)}
+              aria-expanded={isOpen}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                isOpen
+                  ? 'bg-[#14385A] text-white'
+                  : containsActive
+                  ? 'bg-[#14385A]/70 text-white hover:bg-[#14385A]'
+                  : 'text-slate-200 hover:text-white hover:bg-[#14385A]/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <SectionIcon
+                  className={`w-4 h-4 shrink-0 ${
+                    isOpen || containsActive ? 'text-[#FF6B5A]' : 'text-slate-400'
+                  }`}
+                />
+                <span className="truncate">{section.title}</span>
+                {!isOpen && hasPendingBadge && (
+                  <span
+                    className="w-2 h-2 rounded-full bg-[#FF6B5A] shrink-0"
+                    title="Unread items waiting"
+                    aria-label="Unread items waiting"
+                  />
+                )}
+              </div>
+              {isOpen ? (
+                <ChevronDown className="w-4 h-4 text-slate-300 shrink-0 transition-transform duration-200" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200" />
+              )}
+            </button>
+
+            <div
+              className={`grid transition-all duration-200 ease-in-out ${
+                isOpen ? 'grid-rows-[1fr] opacity-100 mt-1' : 'grid-rows-[0fr] opacity-0'
+              }`}
+            >
+              <div className="overflow-hidden">
+                <div className="ml-4 pl-2.5 border-l border-[#1E4268]/70 space-y-0.5 py-0.5">
+                  {section.items.map((item) => {
+                    const ItemIcon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSelectTab(item.id)}
+                        className={`w-full flex items-center justify-between px-2.5 ${
+                          isMobile ? 'py-2' : 'py-1.5'
+                        } rounded-xl text-[11px] font-semibold transition-all group cursor-pointer ${
+                          isActive
+                            ? 'bg-[#FF6B5A] text-white font-bold shadow-md shadow-[#FF6B5A]/25'
+                            : 'text-slate-300 hover:text-white hover:bg-[#14385A]/70'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <ItemIcon
+                            className={`w-3.5 h-3.5 shrink-0 transition-transform group-hover:scale-110 ${
+                              isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
+                            }`}
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+                        {item.badge !== undefined && (
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
+                              item.badgeColor || 'bg-white/20 text-white'
+                            }`}
+                          >
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   const handleCreateProperty = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -318,41 +503,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Navigation List */}
-        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 scrollbar-thin">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleSelectTab(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all group ${
-                  isActive
-                    ? 'bg-[#FF6B5A] text-white shadow-md shadow-[#FF6B5A]/25'
-                    : 'text-slate-300 hover:text-white hover:bg-[#14385A]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon
-                    className={`w-4 h-4 transition-transform group-hover:scale-110 ${
-                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
-                    }`}
-                  />
-                  <span>{item.label}</span>
-                </div>
-                {item.badge && (
-                  <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                      item.badgeColor || 'bg-white/20 text-white'
-                    }`}
-                  >
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <nav className="flex-1 overflow-y-auto px-3 py-3 scrollbar-thin" aria-label="Main Navigation">
+          {renderCollapsibleSections(false)}
         </nav>
 
         {/* Footer info, dark mode, support & logout */}
@@ -460,37 +612,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
 
-            <nav className="flex-1 overflow-y-auto py-3 space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleSelectTab(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                      isActive
-                        ? 'bg-[#FF6B5A] text-white font-bold'
-                        : 'text-slate-300 hover:bg-[#14385A] hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Icon className="w-4 h-4" />
-                      <span>{item.label}</span>
-                    </div>
-                    {item.badge && (
-                      <span
-                        className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
-                          item.badgeColor || 'bg-white/20 text-white'
-                        }`}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+            <nav className="flex-1 overflow-y-auto py-3" aria-label="Mobile Navigation">
+              {renderCollapsibleSections(true)}
 
               {onOpenHelp && (
                 <button
