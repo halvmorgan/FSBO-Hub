@@ -335,8 +335,9 @@ async function generateContentWithRetryAndFallback(params: {
   }
 
   const aiClient = getAiClient();
-  const mainModel = params.mainModel || 'gemini-3.8-flash';
-  const fallbackModel = params.fallbackModel || 'gemini-3.1-flash-lite';
+  // gemini-3.1-flash-lite answers reliably; gemini-3.8-flash was hanging with no reply, so it is now the backup
+  const mainModel = params.mainModel || 'gemini-3.1-flash-lite';
+  const fallbackModel = params.fallbackModel || 'gemini-3.8-flash';
   // gemini-2.5-flash was retired by Google (404 "no longer available"), so it is no longer in the chain
   const models = [
     { name: mainModel, attempts: params.maxRetries ?? 2, delays: [1500, 3000] },
@@ -363,7 +364,7 @@ async function generateContentWithRetryAndFallback(params: {
         console.log(`[Gemini] trying model ${currentModel} (attempt ${attempt}/${attempts})`);
         try {
           // Hard time limit: a hung Gemini call must never block the queue for every user
-          const CALL_TIMEOUT_MS = 45000;
+          const CALL_TIMEOUT_MS = 25000;
           let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
           const response = await Promise.race([
             aiClient.models.generateContent({
@@ -392,6 +393,11 @@ async function generateContentWithRetryAndFallback(params: {
           console.error(`[Real Gemini Error] Model "${currentModel}" attempt ${attempt}/${attempts} failed: Status ${status} - ${msg}`);
           errorLog.push(`${currentModel} #${attempt}: ${status} ${msg.slice(0, 300)}`);
 
+          if (String(msg).includes('timed out')) {
+            // A hung model will not recover on retry -- move straight to the next model
+            hadBusyError = true;
+            break;
+          }
           if (isRealBusyError(err)) {
             hadBusyError = true;
           } else {
