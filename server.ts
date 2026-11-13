@@ -337,12 +337,13 @@ async function generateContentWithRetryAndFallback(params: {
   const aiClient = getAiClient();
   const mainModel = params.mainModel || 'gemini-3.8-flash';
   const fallbackModel = params.fallbackModel || 'gemini-3.1-flash-lite';
-  const tertiaryModel = params.tertiaryModel || 'gemini-2.5-flash';
+  // gemini-2.5-flash was retired by Google (404 "no longer available"), so it is no longer in the chain
   const models = [
     { name: mainModel, attempts: params.maxRetries ?? 2, delays: [1500, 3000] },
     { name: fallbackModel, attempts: 2, delays: [1500, 3000] },
-    { name: tertiaryModel, attempts: 2, delays: [1500, 3000] },
+    ...(params.tertiaryModel ? [{ name: params.tertiaryModel, attempts: 2, delays: [1500, 3000] }] : []),
   ];
+  const errorLog: string[] = [];
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   return await geminiQueue.run(async () => {
@@ -375,6 +376,7 @@ async function generateContentWithRetryAndFallback(params: {
           const status = err?.status || err?.code || err?.statusCode;
           const msg = err?.message || String(err);
           console.error(`[Real Gemini Error] Model "${currentModel}" attempt ${attempt}/${attempts} failed: Status ${status} - ${msg}`);
+          errorLog.push(`${currentModel} #${attempt}: ${status} ${msg.slice(0, 300)}`);
 
           if (isRealBusyError(err)) {
             hadBusyError = true;
@@ -401,6 +403,7 @@ async function generateContentWithRetryAndFallback(params: {
 
     if (lastError) {
       (lastError as any).modelsTried = attemptedModelNames;
+      (lastError as any).errorLog = errorLog;
       if (hadBusyError) {
         (lastError as any).hadBusyError = true;
       }
@@ -418,7 +421,8 @@ function handleGeminiError(res: Response, error: any, context: string) {
   const status = error?.status || error?.code || error?.statusCode || 500;
   const message = error?.message || String(error);
   const modelTried = error?.modelTried || 'gemini-3.8-flash';
-  const modelsTried = error?.modelsTried || ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+  const modelsTried = error?.modelsTried || ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+  const errorLog: string[] = error?.errorLog || [];
   console.error(`[Real Underlying Gemini Error] Context: "${context}" | Models tried: ${modelsTried.join(' -> ')} | Status: ${status} | Message: ${message}`, error);
 
   const lowerMsg = message.toLowerCase();
@@ -445,6 +449,7 @@ function handleGeminiError(res: Response, error: any, context: string) {
       geminiStatus: status,
       modelTried,
       modelsTried,
+      errorLog,
       isAiKeyMissing: true,
       context,
       status: 401,
@@ -462,6 +467,7 @@ function handleGeminiError(res: Response, error: any, context: string) {
       geminiStatus: 503,
       modelTried,
       modelsTried,
+      errorLog,
       isAiBusy: true,
       context,
       status: 503,
@@ -482,6 +488,7 @@ function handleGeminiError(res: Response, error: any, context: string) {
       geminiStatus: status,
       modelTried,
       modelsTried,
+      errorLog,
       isModelError: true,
       context,
       status: 400,
