@@ -24,10 +24,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   const [wizardPhotos, setWizardPhotos] = useState<PhotoItem[]>([...photos]);
   const [saving, setSaving] = useState(false);
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const files = Array.from(e.target.files);
-
+  const addWizardPhotoFiles = (fileList: FileList | File[] | null) => {
+    const files = Array.from(fileList || []).filter(
+      (f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name)
+    );
     for (const file of files) {
       const reader = new FileReader();
       reader.onload = async (event) => {
@@ -36,18 +36,30 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           id: 'photo-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
           dataUrl,
           caption: file.name.replace(/\.[^/.]+$/, ''),
-          isCover: wizardPhotos.length === 0,
+          isCover: false,
           roomCategory: 'Exterior',
-          order: wizardPhotos.length,
+          order: 0,
         };
-        await savePhotoToDB(newPhoto.id, dataUrl, {
-          caption: newPhoto.caption,
-          isCover: newPhoto.isCover,
-        });
-        setWizardPhotos((prev) => [...prev, newPhoto]);
+        // Show the photo right away; the local backup copy must never block it
+        setWizardPhotos((prev) => [
+          ...prev,
+          { ...newPhoto, isCover: prev.length === 0, order: prev.length },
+        ]);
+        try {
+          await savePhotoToDB(newPhoto.id, dataUrl, { caption: newPhoto.caption });
+        } catch (dbErr) {
+          console.warn('Local photo backup failed (continuing):', dbErr);
+        }
       };
+      reader.onerror = () => console.error('Could not read photo file:', file.name, reader.error);
       reader.readAsDataURL(file);
     }
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = '';
+    addWizardPhotoFiles(files);
   };
 
   const handleFinish = async () => {
@@ -201,7 +213,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 You can upload a few photos now (like the front exterior or kitchen). You can always add, reorder, or edit captions later in the Studio.
               </p>
 
-              <label className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-[#FF6B5A]/50 hover:border-[#FF6B5A] bg-orange-50/30 dark:bg-slate-800/50 rounded-2xl cursor-pointer transition-all">
+              <label
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  addWizardPhotoFiles(e.dataTransfer?.files || null);
+                }}
+                className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-[#FF6B5A]/50 hover:border-[#FF6B5A] bg-orange-50/30 dark:bg-slate-800/50 rounded-2xl cursor-pointer transition-all">
                 <Upload className="w-8 h-8 text-[#FF6B5A] mb-2 animate-bounce" />
                 <span className="text-sm font-bold text-[#0F2A44] dark:text-white">
                   Click to select photos or drag and drop

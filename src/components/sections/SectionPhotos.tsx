@@ -104,18 +104,31 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
     setPrepChecklist((prev) => ({ ...prev, [item]: !prev[item] }));
   };
 
-  // Upload photos
-  const handleUploadPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const files = Array.from(e.target.files);
+  // Upload photos (file picker or drag & drop)
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
-    const newItems: PhotoItem[] = [];
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (evt) => resolve(evt.target?.result as string);
+      reader.onerror = () => reject(reader.error || new Error('Could not read ' + file.name));
+      reader.readAsDataURL(file);
+    });
 
-    for (const file of files) {
-      await new Promise<void>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = async (evt) => {
-          const dataUrl = evt.target?.result as string;
+  const addPhotoFiles = async (fileList: FileList | File[] | null) => {
+    const files = Array.from(fileList || []).filter(
+      (f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name)
+    );
+    if (files.length === 0) return;
+    setUploadError(null);
+    setIsUploading(true);
+    try {
+      const newItems: PhotoItem[] = [];
+      for (const file of files) {
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
           const photo: PhotoItem = {
             id: 'photo-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
             dataUrl,
@@ -124,18 +137,50 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
             roomCategory: 'Interior',
             order: photos.length + newItems.length,
           };
-          await savePhotoToDB(photo.id, dataUrl, {
-            caption: photo.caption,
-            isCover: photo.isCover,
-          });
+          // Local backup copy -- never let a failure here block the upload
+          try {
+            await savePhotoToDB(photo.id, dataUrl, { caption: photo.caption, isCover: photo.isCover });
+          } catch (dbErr) {
+            console.warn('Local photo backup failed (continuing):', dbErr);
+          }
           newItems.push(photo);
-          resolve();
-        };
-        reader.readAsDataURL(file);
-      });
+        } catch (fileErr) {
+          console.error('Could not read photo file:', fileErr);
+          setUploadError('One or more photos could not be read. Try a JPG or PNG file.');
+        }
+      }
+      if (newItems.length > 0) {
+        await onUpdatePhotos([...photos, ...newItems]);
+      }
+    } catch (err: any) {
+      console.error('Photo upload failed:', err);
+      setUploadError('Your photos could not be saved. Please try again. (Details: ' + (err?.code || err?.message || String(err)) + ')');
+    } finally {
+      setIsUploading(false);
     }
+  };
 
-    onUpdatePhotos([...photos, ...newItems]);
+  const handleUploadPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    // Reset so choosing the same file again still triggers an upload
+    e.target.value = '';
+    await addPhotoFiles(files);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    await addPhotoFiles(e.dataTransfer?.files || null);
   };
 
   // Set Cover Photo
@@ -290,8 +335,15 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
         onNext={() => onNavigate('pricing')}
       />
 
-      {/* Main Studio Grid: Photo Manager */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-5">
+      {/* Main Studio Grid: Photo Manager (also a drag & drop zone) */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`bg-white dark:bg-slate-900 rounded-3xl p-6 border shadow-sm space-y-5 transition-all ${
+          isDragOver ? 'border-[#FF6B5A] ring-4 ring-[#FF6B5A]/20' : 'border-slate-200/80 dark:border-slate-800'
+        }`}
+      >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div>
             <h3 className="font-heading font-bold text-base text-[#0F2A44] dark:text-white flex items-center gap-2">
@@ -305,7 +357,7 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
 
           <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] cursor-pointer shadow-md shadow-[#FF6B5A]/25 transition-all">
             <Upload className="w-4 h-4" />
-            <span>Upload Photos</span>
+            <span>{isUploading ? 'Uploading...' : 'Upload Photos'}</span>
             <input
               type="file"
               multiple
@@ -316,13 +368,25 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
           </label>
         </div>
 
+        {uploadError && (
+          <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-300 flex items-start justify-between gap-3">
+            <span>{uploadError}</span>
+            <button type="button" onClick={() => setUploadError(null)} className="font-bold">x</button>
+          </div>
+        )}
+        {isDragOver && (
+          <div className="p-6 text-center rounded-2xl border-2 border-dashed border-[#FF6B5A] bg-orange-50/50 dark:bg-slate-800/50 text-sm font-bold text-[#FF6B5A]">
+            Drop your photos here
+          </div>
+        )}
+
         {/* Gallery Cards */}
         {photos.length === 0 ? (
           <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
             <Camera className="w-10 h-10 text-slate-300 mx-auto mb-2" />
             <h4 className="text-sm font-bold text-[#0F2A44] dark:text-white">No photos uploaded yet</h4>
             <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-              Click the "Upload Photos" button above to add shots of the front, kitchen, living room, and master bedroom.
+              Click "Upload Photos" above, or drag photos onto this box, to add shots of the front, kitchen, living room, and master bedroom.
             </p>
           </div>
         ) : (
