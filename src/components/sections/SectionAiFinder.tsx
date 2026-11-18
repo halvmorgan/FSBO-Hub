@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PropertyProfile, PhotoItem, ActiveTab } from '../../types';
 import { WhyThisMatters } from '../common/WhyThisMatters';
 import { StripeBillingNotice } from '../common/StripeBillingNotice';
@@ -113,6 +113,20 @@ function normalizeSchoolText(val: any): string {
     .trim();
 }
 
+function normalizePropertyType(val: any): string {
+  const s = String(val || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s) return '';
+  if (s === 'sfr' || s.includes('single family')) return 'single family';
+  if (s.includes('condo') || s.includes('condominium')) return 'condo';
+  if (s.includes('townhouse') || s.includes('townhome')) return 'townhouse';
+  if (s.includes('multi family') || s.includes('duplex')) return 'multi family';
+  return s;
+}
+
 function comparePublicField(
   key: string,
   userVal: any,
@@ -166,6 +180,14 @@ function comparePublicField(
     }
   }
 
+  if (key === 'propertyType') {
+    const uType = normalizePropertyType(userVal);
+    const pType = normalizePropertyType(publicVal);
+    if (uType && pType) {
+      return { hasPublic: true, isDifferent: uType !== pType };
+    }
+  }
+
   if (key === 'schoolDistrict') {
     const uNorm = normalizeSchoolText(userVal);
     const pNorm = normalizeSchoolText(publicVal);
@@ -202,26 +224,34 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
   const [photoFeatures, setPhotoFeatures] = useState<PhotoDetectedFeature[]>([]);
   const [photoScanError, setPhotoScanError] = useState<string | null>(null);
 
-  // 2. Public Info State
+  // 2. Public Info State (persisted on property.publicRecordsCheck)
   const [isCheckingPublic, setIsCheckingPublic] = useState(false);
-  const [publicData, setPublicData] = useState<any | null>(null);
-  const [publicSources, setPublicSources] = useState<Array<{ title: string; url: string }>>([]);
+  const [publicData, setPublicData] = useState<any | null>(
+    () => property.publicRecordsCheck?.data || null
+  );
+  const [publicSources, setPublicSources] = useState<Array<{ title: string; url: string }>>(
+    () => property.publicRecordsCheck?.sources || []
+  );
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(
+    () => property.publicRecordsCheck?.checkedAt || null
+  );
   const [publicError, setPublicError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPublicData(property.publicRecordsCheck?.data || null);
+    setPublicSources(property.publicRecordsCheck?.sources || []);
+    setLastCheckedAt(property.publicRecordsCheck?.checkedAt || null);
+  }, [property.id, property.publicRecordsCheck]);
 
   // 3. "What am I missing?" State
   const [isCheckingGaps, setIsCheckingGaps] = useState(false);
   const [gapQuestions, setGapQuestions] = useState<MissingFeatureQuestion[]>([]);
   const [gapError, setGapError] = useState<string | null>(null);
 
-  // 15s wait / 90s timeout handlers
+  // 15s wait / 90s timeout handlers for photo scan and gap analysis
   const { waitMessage: photoWaitMsg } = useAiWaitTimer(isScanningPhotos, () => {
     setIsScanningPhotos(false);
     setPhotoScanError('Something went wrong — please try again');
-  });
-
-  const { waitMessage: publicWaitMsg } = useAiWaitTimer(isCheckingPublic, () => {
-    setIsCheckingPublic(false);
-    setPublicError('Something went wrong — please try again');
   });
 
   const { waitMessage: gapWaitMsg } = useAiWaitTimer(isCheckingGaps, () => {
@@ -343,7 +373,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
     );
   };
 
-  // Action 2: Check Public Records
+  // Action 2: Check Public Records (45s timeout, persisted to seller's account)
   const handleCheckPublicInfo = async () => {
     if (!property.address) {
       setPublicError('Please specify an address in the Property Profile first.');
@@ -365,15 +395,34 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           creditsUsed,
           maxCredits,
           onCreditsSynced: syncAiCredits,
+          maxRetries: 0,
+          timeoutMs: 45000,
+          timeoutMessage: 'Public records are slow right now — please try again',
         }
       );
 
-      setPublicData(data.propertyData || {});
-      setPublicSources(data.sources || []);
+      const nextData = data.propertyData || {};
+      const nextSources = Array.isArray(data.sources) ? data.sources : [];
+      const checkedAt = new Date().toISOString();
+
+      setPublicData(nextData);
+      setPublicSources(nextSources);
+      setLastCheckedAt(checkedAt);
+
+      onUpdateProperty({
+        ...property,
+        publicRecordsCheck: {
+          checkedAt,
+          data: nextData,
+          sources: nextSources,
+        },
+      });
     } catch (err: any) {
       console.error(err);
       if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
         setUpgradePrompt(err.message);
+      } else if (String(err?.message || '').toLowerCase().includes('slow right now')) {
+        setPublicError('Public records are slow right now — please try again');
       } else {
         setPublicError(normalizeFriendlyAiError(err));
       }
@@ -383,9 +432,21 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
   };
 
   const handleApplyPublicField = (fieldKey: keyof PropertyProfile, publicVal: any) => {
+    let nextVal = publicVal;
+    if (
+      (fieldKey === 'beds' ||
+        fieldKey === 'bathsFull' ||
+        fieldKey === 'sqft' ||
+        fieldKey === 'yearBuilt' ||
+        fieldKey === 'taxes') &&
+      typeof publicVal !== 'number'
+    ) {
+      const parsed = parseNumericVal(publicVal);
+      if (parsed !== null) nextVal = parsed;
+    }
     onUpdateProperty({
       ...property,
-      [fieldKey]: publicVal,
+      [fieldKey]: nextVal,
     });
   };
 
@@ -436,7 +497,16 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
     }
   };
 
-  // Build normalized comparison rows
+  // Build normalized comparison rows (7 core compared fields)
+  const hasAnnualTaxes =
+    !isBlankOrMissingPublicVal(publicData?.annualTaxes) &&
+    parseNumericVal(publicData?.annualTaxes) !== 0;
+  const publicTaxOrAssessedVal = hasAnnualTaxes
+    ? publicData?.annualTaxes
+    : !isBlankOrMissingPublicVal(publicData?.assessedValue)
+    ? publicData?.assessedValue
+    : publicData?.annualTaxes;
+
   const comparisonRows: PublicPropertyFact[] = publicData
     ? [
         {
@@ -448,14 +518,14 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
         },
         {
           key: 'bathsFull',
-          label: 'Full Baths',
+          label: 'Bathrooms',
           userValue: property.bathsFull,
           publicValue: publicData.baths,
           ...comparePublicField('bathsFull', property.bathsFull, publicData.baths),
         },
         {
           key: 'sqft',
-          label: 'Square Footage',
+          label: 'Square Feet',
           userValue: property.sqft,
           publicValue: publicData.sqft,
           ...comparePublicField('sqft', property.sqft, publicData.sqft),
@@ -475,21 +545,33 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           ...comparePublicField('yearBuilt', property.yearBuilt, publicData.yearBuilt),
         },
         {
-          key: 'schoolDistrict',
-          label: 'School District',
-          userValue: property.schoolDistrict,
-          publicValue: publicData.schoolDistrict,
-          ...comparePublicField('schoolDistrict', property.schoolDistrict, publicData.schoolDistrict),
+          key: 'propertyType',
+          label: 'Property Type',
+          userValue: property.propertyType || 'Single Family',
+          publicValue: publicData.propertyType,
+          ...comparePublicField(
+            'propertyType',
+            property.propertyType || 'Single Family',
+            publicData.propertyType
+          ),
         },
         {
           key: 'taxes',
-          label: 'Annual Taxes ($)',
+          label: 'Taxes / Assessed Value',
           userValue: property.taxes,
-          publicValue: publicData.annualTaxes,
-          ...comparePublicField('taxes', property.taxes, publicData.annualTaxes),
+          publicValue: publicTaxOrAssessedVal,
+          ...comparePublicField('taxes', property.taxes, publicTaxOrAssessedVal),
         },
       ]
     : [];
+
+  const formattedLastChecked = lastCheckedAt
+    ? new Date(lastCheckedAt).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : null;
 
   return (
     <div className="space-y-6">
@@ -697,12 +779,17 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
               type="button"
               disabled={isCheckingPublic}
               onClick={handleCheckPublicInfo}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-blue-600 dark:hover:bg-blue-700 transition-all disabled:opacity-50 shadow-md shrink-0"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-blue-600 dark:hover:bg-blue-700 transition-all disabled:opacity-50 shadow-md shrink-0 cursor-pointer"
             >
               {isCheckingPublic ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Searching Assessor Records...
+                  Searching...
+                </>
+              ) : publicData ? (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  Re-check
                 </>
               ) : (
                 <>
@@ -711,7 +798,6 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
                 </>
               )}
             </button>
-            <AiWaitNotice message={publicWaitMsg} className="mt-1" />
             {publicError && (
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[11px] text-red-500 font-medium text-right max-w-xs">
@@ -751,17 +837,16 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           <div className="p-8 text-center space-y-3">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
             <p className="text-sm font-semibold text-[#0F2A44] dark:text-white">
-              Searching municipal records and MLS historical data for {property.address}...
+              Searching public records… this can take up to 30 seconds
             </p>
-            <p className="text-xs text-slate-400">Grounding findings with active web sources.</p>
           </div>
         )}
 
         {!isCheckingPublic && publicData && (
           <div className="space-y-4">
-            {publicData.summary && (
-              <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
-                <strong>Public Record Summary:</strong> {publicData.summary}
+            {formattedLastChecked && (
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span>Last checked {formattedLastChecked}</span>
               </div>
             )}
 

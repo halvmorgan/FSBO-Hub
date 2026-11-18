@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PropertyProfile, ListingCopyData, ActiveTab } from '../../types';
 import { WhyThisMatters } from '../common/WhyThisMatters';
 import { ListingErrorBoundary } from '../common/ListingErrorBoundary';
@@ -9,6 +9,7 @@ import {
   formatAiText,
   sanitizeListingCopy,
 } from '../../lib/formatAiCopy';
+import { sanitizeSavedDescription } from '../../lib/sampleScrub';
 import {
   FileText,
   Sparkles,
@@ -18,7 +19,6 @@ import {
   AlertTriangle,
   Loader2,
   RefreshCw,
-  Share2,
 } from 'lucide-react';
 import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
 import { AiWaitNotice } from '../common/AiWaitNotice';
@@ -33,6 +33,7 @@ interface SectionListingProps {
   property: PropertyProfile;
   listingCopy: ListingCopyData | null;
   onUpdateListingCopy: (copy: ListingCopyData) => void;
+  onUpdateProperty?: (updated: PropertyProfile) => Promise<void> | void;
   onNavigate: (tab: ActiveTab) => void;
   onOpenPricing?: () => void;
 }
@@ -41,6 +42,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
   property,
   listingCopy,
   onUpdateListingCopy,
+  onUpdateProperty,
   onNavigate,
   onOpenPricing,
 }) => {
@@ -50,6 +52,31 @@ export const SectionListing: React.FC<SectionListingProps> = ({
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
+
+  const savedPropertyDescription = sanitizeSavedDescription(property.description);
+  const [draftDescription, setDraftDescription] = useState<string>(() => {
+    if (listingCopy) {
+      return formatAiText(listingCopy.fullDescription) || savedPropertyDescription;
+    }
+    return savedPropertyDescription;
+  });
+  const [isSavingDesc, setIsSavingDesc] = useState(false);
+  const [savedDescNotice, setSavedDescNotice] = useState(false);
+  const [saveDescError, setSaveDescError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const cleanPropDesc = sanitizeSavedDescription(property.description);
+    setDraftDescription(cleanPropDesc || (listingCopy ? formatAiText(listingCopy.fullDescription) : ''));
+    setSavedDescNotice(false);
+    setSaveDescError(null);
+  }, [property.id]);
+
+  useEffect(() => {
+    const cleanPropDesc = sanitizeSavedDescription(property.description);
+    if (!draftDescription && cleanPropDesc) {
+      setDraftDescription(cleanPropDesc);
+    }
+  }, [property.description]);
 
   const planType = userProfile?.plan || 'trial';
   const creditsUsed = userProfile?.aiCreditsUsed || 0;
@@ -96,6 +123,9 @@ export const SectionListing: React.FC<SectionListingProps> = ({
       const updatedCopy = sanitizeListingCopy(data, defaultHeadline, tone);
 
       onUpdateListingCopy(updatedCopy);
+      setDraftDescription(formatAiText(updatedCopy.fullDescription));
+      setSavedDescNotice(false);
+      setSaveDescError(null);
     } catch (err: any) {
       console.error(err);
       if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
@@ -105,6 +135,38 @@ export const SectionListing: React.FC<SectionListingProps> = ({
       }
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleUseThisDescription = async () => {
+    const cleanText = sanitizeSavedDescription(draftDescription);
+    if (!cleanText) {
+      setSaveDescError('Please enter a listing description before saving.');
+      setSavedDescNotice(false);
+      return;
+    }
+    if (!onUpdateProperty) return;
+
+    setIsSavingDesc(true);
+    setSaveDescError(null);
+    setSavedDescNotice(false);
+    try {
+      await onUpdateProperty({
+        ...property,
+        description: cleanText,
+      });
+      if (listingCopy) {
+        onUpdateListingCopy({
+          ...listingCopy,
+          fullDescription: cleanText,
+        });
+      }
+      setSavedDescNotice(true);
+    } catch (err: any) {
+      console.error('Failed to save listing description:', err);
+      setSaveDescError('Could not save description — please try again.');
+    } finally {
+      setIsSavingDesc(false);
     }
   };
 
@@ -258,7 +320,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
           <div className="space-y-6">
             {/* 1. Full MLS & Website Description */}
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF6B5A]">
                     Primary Version (Zillow, FSBO Portals, Property Website)
@@ -267,32 +329,91 @@ export const SectionListing: React.FC<SectionListingProps> = ({
                     {formatAiText(listingCopy.headline, `${property.address} - Move-In Ready Home`)}
                   </h4>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleCopy(
-                      'full',
-                      `${formatAiText(listingCopy.headline)}\n\n${formatAiText(listingCopy.fullDescription)}\n\nKEY FACTS:\n${formatKeyFacts(listingCopy.keyFactsBlock)}\n\nRECENT UPGRADES:\n${formatUpgradesList(listingCopy.upgradesListBlock)}`
-                    )
-                  }
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] transition-all"
-                >
-                  {copiedKey === 'full' ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-300" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      Copy Full Listing
-                    </>
-                  )}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSavingDesc}
+                    onClick={handleUseThisDescription}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-sm cursor-pointer"
+                  >
+                    {isSavingDesc ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        Use This Description
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleCopy(
+                        'full',
+                        `${formatAiText(listingCopy.headline)}\n\n${draftDescription || formatAiText(listingCopy.fullDescription)}\n\nKEY FACTS:\n${formatKeyFacts(listingCopy.keyFactsBlock)}\n\nRECENT UPGRADES:\n${formatUpgradesList(listingCopy.upgradesListBlock)}`
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] transition-all"
+                  >
+                    {copiedKey === 'full' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-300" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        Copy Full Listing
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
-              <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl">
-                {formatAiText(listingCopy.fullDescription)}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label
+                    htmlFor="listing-writer-description-input"
+                    className="text-[11px] font-semibold text-slate-500 dark:text-slate-400"
+                  >
+                    Edit your buyer-facing description below, then click &ldquo;Use This Description&rdquo; to publish it to your listing:
+                  </label>
+                  {savedPropertyDescription &&
+                    savedPropertyDescription === draftDescription.trim() &&
+                    !savedDescNotice && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                        <Check className="w-3 h-3" />
+                        Currently saved on your listing
+                      </span>
+                    )}
+                </div>
+                <textarea
+                  id="listing-writer-description-input"
+                  rows={7}
+                  value={draftDescription}
+                  onChange={(e) => {
+                    setDraftDescription(e.target.value);
+                    setSavedDescNotice(false);
+                    setSaveDescError(null);
+                  }}
+                  placeholder="Write or edit your property description..."
+                  className="w-full text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-[#FF6B5A]"
+                />
+                {savedDescNotice && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>Saved — buyers will now see this description</span>
+                  </div>
+                )}
+                {saveDescError && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-medium text-red-700 dark:text-red-300">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{saveDescError}</span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -430,23 +551,82 @@ export const SectionListing: React.FC<SectionListingProps> = ({
             </div>
           </div>
         ) : (
-          <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
-            <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-            <h4 className="text-sm font-bold text-[#0F2A44] dark:text-white">
-              No listing copy generated yet
-            </h4>
-            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto mb-4">
-              Click "Generate Complete Listing" above to instantly craft 5 compliant formats for Zillow, Facebook Marketplace, Craigslist, and your yard flyer.
-            </p>
-            <button
-              type="button"
-              disabled={isGenerating}
-              onClick={handleGenerateCopy}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-md shadow-[#FF6B5A]/25"
-            >
-              <Sparkles className="w-4 h-4 text-[#F2B544]" />
-              Generate Complete Listing
-            </button>
+          <div className="space-y-6">
+            {savedPropertyDescription && (
+              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                      Saved Listing Description
+                    </span>
+                    <h4 className="font-heading font-bold text-base text-[#0F2A44] dark:text-white">
+                      Current Description Shown to Buyers
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isSavingDesc}
+                    onClick={handleUseThisDescription}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-sm cursor-pointer"
+                  >
+                    {isSavingDesc ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        Use This Description
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <textarea
+                  rows={6}
+                  value={draftDescription}
+                  onChange={(e) => {
+                    setDraftDescription(e.target.value);
+                    setSavedDescNotice(false);
+                    setSaveDescError(null);
+                  }}
+                  placeholder="Write or edit your property description..."
+                  className="w-full text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-[#FF6B5A]"
+                />
+                {savedDescNotice && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>Saved — buyers will now see this description</span>
+                  </div>
+                )}
+                {saveDescError && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-medium text-red-700 dark:text-red-300">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{saveDescError}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+              <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <h4 className="text-sm font-bold text-[#0F2A44] dark:text-white">
+                No listing copy generated yet
+              </h4>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto mb-4">
+                Click "Generate Complete Listing" above to instantly craft 5 compliant formats for Zillow, Facebook Marketplace, Craigslist, and your yard flyer.
+              </p>
+              <button
+                type="button"
+                disabled={isGenerating}
+                onClick={handleGenerateCopy}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-md shadow-[#FF6B5A]/25"
+              >
+                <Sparkles className="w-4 h-4 text-[#F2B544]" />
+                Generate Complete Listing
+              </button>
+            </div>
           </div>
         )}
       </ListingErrorBoundary>

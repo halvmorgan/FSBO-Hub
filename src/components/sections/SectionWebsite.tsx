@@ -171,6 +171,8 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
         zip: property.zip,
         price: property.price,
         originalPrice: property.originalPrice,
+        propertyType: property.propertyType || 'Single Family',
+        description: sanitizeSavedDescription(property.description),
         beds: property.beds,
         bathsFull: property.bathsFull,
         bathsHalf: property.bathsHalf,

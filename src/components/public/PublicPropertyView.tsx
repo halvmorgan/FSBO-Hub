@@ -25,7 +25,7 @@ import { db } from '../../lib/firebase';
 import { PublicSiteDoc } from '../../types/saas';
 import { incrementFirestoreReadCount } from '../../lib/firestoreTracker';
 import { useAuth } from '../../contexts/AuthContext';
-import { hasLegacySampleText, isStockPhotoUrl } from '../../lib/sampleScrub';
+import { hasLegacySampleText, isStockPhotoUrl, sanitizeSavedDescription } from '../../lib/sampleScrub';
 import { StripeBillingNotice } from '../common/StripeBillingNotice';
 
 interface PublicPropertyViewProps {
@@ -78,7 +78,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
       if (!slug) return;
       const cacheKey = `fsbo_public_site_${slug}`;
       const cacheTimeKey = `fsbo_public_site_ts_${slug}`;
-      const CACHE_TTL_MS = 15 * 60 * 1000;
+      const CACHE_TTL_MS = 60 * 1000;
 
       let cachedData: PublicSiteDoc | null = null;
       let isFresh = false;
@@ -277,6 +277,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
       ? [{ id: 'cover', url: property.coverPhotoUrl, caption: 'Front Exterior', isCover: true }]
       : [];
   const allPhotos = rawPhotos.filter((p) => p?.url && !isStockPhotoUrl(p.url));
+  const cleanDescription = sanitizeSavedDescription(property.description);
   const cleanFeatures = (property.features || []).filter((f) => !hasLegacySampleText(f));
   const cleanUpgrades = (property.upgrades || []).filter((u) => !hasLegacySampleText(u?.item));
 
@@ -522,6 +523,18 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* About This Home (saved description only — omitted if empty) */}
+            {cleanDescription && (
+              <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-stone-200">
+                <h3 className="text-lg font-heading font-bold text-[#0F2A44] mb-3">
+                  About This Home
+                </h3>
+                <div className="text-sm text-stone-700 leading-relaxed whitespace-pre-line">
+                  {cleanDescription}
+                </div>
+              </div>
+            )}
 
             {/* Features & Highlights */}
             {cleanFeatures.length > 0 && (

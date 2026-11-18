@@ -59,6 +59,8 @@ export interface PublicSiteDoc {
   zip: string;
   price: number;
   originalPrice?: number;
+  propertyType?: string;
+  description?: string;
   beds: number;
   bathsFull: number;
   bathsHalf: number;

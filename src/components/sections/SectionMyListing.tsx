@@ -43,7 +43,6 @@ import { db } from '../../lib/firebase';
 import { getAppUrl } from '../../lib/appUrl';
 import {
   sanitizeSavedDescription,
-  sanitizeSpecialNotes,
   hasLegacySampleText,
   isStockPhotoUrl,
 } from '../../lib/sampleScrub';
@@ -109,10 +108,8 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
   const mainPhoto = validPhotos[0]?.dataUrl;
   const secondaryPhotos = validPhotos.slice(1, 5);
 
-  // Clean seller description & features (treats legacy sample text as empty)
-  const cleanedDescription = sanitizeSavedDescription(property.description);
-  const cleanedNotes = sanitizeSpecialNotes(property.specialNotes).join('\n\n');
-  const sellerDescriptionText = cleanedDescription || cleanedNotes;
+  // Clean seller description & features (strictly from saved property.description; treats legacy sample text as empty)
+  const sellerDescriptionText = sanitizeSavedDescription(property.description);
   const cleanFeatures = (property.features || []).filter((f) => !hasLegacySampleText(f));
   const cleanUpgrades = (property.upgrades || []).filter((u) => !hasLegacySampleText(u.item));
 
@@ -497,7 +494,7 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                     <div>
                       <div className="text-[11px] text-stone-500 font-semibold uppercase">Property Type</div>
                       <div className="text-xs sm:text-sm font-bold text-[#0F2A44] dark:text-white">
-                        Single Family
+                        {property.propertyType || 'Single Family'}
                       </div>
                     </div>
                   </div>
@@ -718,7 +715,7 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                   <ul className="space-y-2 text-stone-600 dark:text-stone-300">
                     <li className="flex justify-between">
                       <span className="text-stone-400">Property Type:</span>
-                      <strong className="text-stone-800 dark:text-white">Single Family</strong>
+                      <strong className="text-stone-800 dark:text-white">{property.propertyType || 'Single Family'}</strong>
                     </li>
                     {property.lotSize ? (
                       <li className="flex justify-between">

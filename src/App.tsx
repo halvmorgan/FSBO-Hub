@@ -39,7 +39,7 @@ import { LandingPage } from './components/public/LandingPage';
 import { AuthModal } from './components/auth/AuthModal';
 import { NotificationBell } from './components/common/NotificationBell';
 import { uploadListingPhoto } from './lib/photoStorage';
-import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { CloudUpload, X, HelpCircle, Compass, AlertTriangle, User, LogOut, ChevronDown } from 'lucide-react';
 import { PlanType } from './types/saas';
@@ -671,7 +671,7 @@ function AppContent() {
         sqft: propToSync.sqft || 0,
         lotSize: propToSync.lotSize || '',
         yearBuilt: propToSync.yearBuilt || 0,
-        propertyType: 'Single Family',
+        propertyType: propToSync.propertyType || 'Single Family',
         garage: propToSync.garage || '',
         heating: propToSync.heating || '',
         cooling: propToSync.cooling || '',
@@ -933,6 +933,25 @@ function AppContent() {
     if (currentUser && !demoMode) {
       await updateCurrentProperty(newProp);
       await syncPublicListing(newProp, photos, openHouses);
+
+      const siteSlug =
+        newProp.publishedSlug ||
+        (newProp.address
+          ? newProp.address.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+          : '');
+      if (siteSlug) {
+        const cleanDesc = sanitizeSavedDescription(newProp.description);
+        await updateDoc(doc(db, 'publicSites', siteSlug), {
+          description: cleanDesc,
+          propertyType: newProp.propertyType || 'Single Family',
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+        try {
+          sessionStorage.removeItem(`fsbo_site_published_${siteSlug}`);
+          localStorage.removeItem(`fsbo_public_site_${siteSlug}`);
+          localStorage.removeItem(`fsbo_public_site_ts_${siteSlug}`);
+        } catch {}
+      }
     }
   };
 
@@ -1562,6 +1581,7 @@ function AppContent() {
                   property={property}
                   listingCopy={listingCopy}
                   onUpdateListingCopy={setListingCopy}
+                  onUpdateProperty={handleUpdateProperty}
                   onNavigate={setActiveTab}
                   onOpenPricing={() => {
                     window.history.pushState({}, '', '/pricing');

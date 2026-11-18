@@ -19,6 +19,8 @@ export interface PostAiOptions {
   maxCredits?: number;
   onCreditsSynced?: (creditsUsed: number) => void;
   maxRetries?: number;
+  timeoutMs?: number;
+  timeoutMessage?: string;
 }
 
 const TRANSIENT_STATUSES = new Set([502, 503, 504, 429]);
@@ -60,6 +62,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * - Trial/plan credit pre-check
  * - Firebase Auth ID token header for persisted per-user credit tracking
  * - Automatic retry (up to 2 retries on transient network / 502 / 503 / 504 failures)
+ * - Optional AbortController timeout (e.g. 45s for public records lookup)
  * - Clean user-facing errors (never raw "Failed to fetch")
  */
 export async function postAiJson<T = any>(
@@ -73,6 +76,8 @@ export async function postAiJson<T = any>(
     maxCredits,
     onCreditsSynced,
     maxRetries = 2,
+    timeoutMs,
+    timeoutMessage = 'Request timed out — please try again',
   } = opts;
 
   if (
@@ -113,11 +118,20 @@ export async function postAiJson<T = any>(
   let lastError: any = null;
 
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+    const controller = typeof timeoutMs === 'number' && timeoutMs > 0 ? new AbortController() : null;
+    const timeoutHandle =
+      controller && timeoutMs
+        ? setTimeout(() => {
+            controller.abort();
+          }, timeoutMs)
+        : null;
+
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: controller?.signal,
       });
 
       const data = await res.json().catch(() => ({} as any));
@@ -163,6 +177,10 @@ export async function postAiJson<T = any>(
         throw err;
       }
 
+      if (err?.name === 'AbortError' || controller?.signal.aborted) {
+        throw new Error(timeoutMessage);
+      }
+
       lastError = err;
       if (isNetworkFetchError(err) && attempt < totalAttempts) {
         await wait(attempt * 1000);
@@ -174,6 +192,8 @@ export async function postAiJson<T = any>(
       }
 
       throw new Error(normalizeFriendlyAiError(err));
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   }
 

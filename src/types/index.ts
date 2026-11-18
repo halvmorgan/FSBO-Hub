@@ -1,3 +1,22 @@
+export interface PublicRecordsCheckData {
+  beds?: number | null;
+  baths?: number | null;
+  sqft?: number | null;
+  lotSize?: string | null;
+  yearBuilt?: number | null;
+  propertyType?: string | null;
+  annualTaxes?: number | null;
+  assessedValue?: number | null;
+  schoolDistrict?: string | null;
+  summary?: string | null;
+}
+
+export interface PublicRecordsCheckSnapshot {
+  checkedAt: string;
+  data: PublicRecordsCheckData;
+  sources?: Array<{ title: string; url: string }>;
+}
+
 export interface PropertyProfile {
   id?: string;
   ownerUid?: string;
@@ -7,6 +26,7 @@ export interface PropertyProfile {
   zip: string;
   price: number;
   originalPrice?: number;
+  propertyType?: string;
   targetListDate: string;
   listDate?: string;
   beds: number;
@@ -45,6 +65,7 @@ export interface PropertyProfile {
   published?: boolean;
   publishedSlug?: string;
   description?: string;
+  publicRecordsCheck?: PublicRecordsCheckSnapshot;
   setupComplete?: boolean;
   photos?: PhotoItem[];
 }

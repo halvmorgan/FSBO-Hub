@@ -396,6 +396,8 @@ async function generateContentWithRetryAndFallback(params: {
   fallbackModel?: string;
   tertiaryModel?: string;
   maxRetries?: number;
+  callTimeoutMs?: number;
+  skipFallback?: boolean;
 }): Promise<{ response: any; modelUsed: string }> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
@@ -406,13 +408,13 @@ async function generateContentWithRetryAndFallback(params: {
   }
 
   const aiClient = getAiClient();
-  // gemini-3.1-flash-lite answers reliably; gemini-3.8-flash was hanging with no reply, so it is now the backup
+  // gemini-3.1-flash-lite answers reliably; gemini-3.8-flash was hanging with no reply, so it is only used when fallback is enabled
   const mainModel = params.mainModel || 'gemini-3.1-flash-lite';
   const fallbackModel = params.fallbackModel || 'gemini-3.8-flash';
   // gemini-2.5-flash was retired by Google (404 "no longer available"), so it is no longer in the chain
   const models = [
     { name: mainModel, attempts: params.maxRetries ?? 2, delays: [1500, 3000] },
-    { name: fallbackModel, attempts: 2, delays: [1500, 3000] },
+    ...(params.skipFallback ? [] : [{ name: fallbackModel, attempts: 2, delays: [1500, 3000] }]),
     ...(params.tertiaryModel ? [{ name: params.tertiaryModel, attempts: 2, delays: [1500, 3000] }] : []),
   ];
   const errorLog: string[] = [];
@@ -435,7 +437,7 @@ async function generateContentWithRetryAndFallback(params: {
         console.log(`[Gemini] trying model ${currentModel} (attempt ${attempt}/${attempts})`);
         try {
           // Hard time limit: a hung Gemini call must never block the queue for every user
-          const CALL_TIMEOUT_MS = 25000;
+          const CALL_TIMEOUT_MS = params.callTimeoutMs ?? 25000;
           let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
           const response = await Promise.race([
             aiClient.models.generateContent({
@@ -746,39 +748,25 @@ app.post('/api/gemini/public-info', checkAiCredits(1), async (req: Request, res:
       return res.status(400).json({ error: 'Address is required' });
     }
 
-    const prompt = `Search the web for public real estate and municipal property records for this address:
-"${address}, ${state}".
-Look up publicly recorded facts from county records, tax assessors, Redfin, Zillow, or Realtor public pages:
-- Bedrooms count
-- Bathrooms count
-- Finished square footage
-- Lot size
-- Year built
-- School district name
-- Estimated annual property taxes or tax assessed value
-
-Extract the findings and provide them in clean JSON format:
-{
-  "beds": number or null,
-  "baths": number or null,
-  "sqft": number or null,
-  "lotSize": "0.35 acres" or null,
-  "yearBuilt": number or null,
-  "schoolDistrict": "string" or null,
-  "annualTaxes": number or null,
-  "summary": "1-2 sentence overview of what was found publicly about this home."
-}
-Only output the JSON.`;
+    const prompt = `Public property records lookup for "${address}, ${state}".
+Return ONLY compact JSON with these exact keys (use null if unknown, no summary or extra text):
+{"beds":number|null,"baths":number|null,"sqft":number|null,"lotSize":string|null,"yearBuilt":number|null,"propertyType":string|null,"annualTaxes":number|null,"assessedValue":number|null}`;
 
     let response: any;
-    let modelUsed = 'gemini-3.8-flash';
+    let modelUsed = 'gemini-3.1-flash-lite';
     let sources: any[] = [];
+    const startedAt = Date.now();
 
     try {
       const result = await generateContentWithRetryAndFallback({
         contents: prompt,
+        mainModel: 'gemini-3.1-flash-lite',
+        maxRetries: 1,
+        skipFallback: true,
+        callTimeoutMs: 25000,
         config: {
           tools: [{ googleSearch: {} }],
+          maxOutputTokens: 320,
         },
       });
       response = result.response;
@@ -791,13 +779,22 @@ Only output the JSON.`;
           title: c.web.title || c.web.uri,
           url: c.web.uri,
         }));
-    } catch (searchErr) {
-      if (isRealBusyError(searchErr)) {
-        console.warn('[public-info] googleSearch tool busy, falling back to direct model knowledge...');
+    } catch (searchErr: any) {
+      const elapsedMs = Date.now() - startedAt;
+      const errMsg = String(searchErr?.message || '').toLowerCase();
+      const timedOut = errMsg.includes('timed out');
+      // Only run a fast non-search retry if the grounded call failed quickly (< 8s) and did not time out
+      if (!timedOut && elapsedMs < 8000 && isRealBusyError(searchErr)) {
+        console.warn('[public-info] googleSearch tool unavailable quickly, trying direct model lookup...');
         const result = await generateContentWithRetryAndFallback({
           contents: prompt,
+          mainModel: 'gemini-3.1-flash-lite',
+          maxRetries: 1,
+          skipFallback: true,
+          callTimeoutMs: 12000,
           config: {
             responseMimeType: 'application/json',
+            maxOutputTokens: 320,
           },
         });
         response = result.response;
@@ -808,7 +805,17 @@ Only output the JSON.`;
     }
 
     const rawText = response.text || '';
-    const propertyData = parseAiJson(rawText, { summary: rawText });
+    const parsedData = parseAiJson(rawText, {});
+    const propertyData = {
+      beds: parsedData.beds ?? null,
+      baths: parsedData.baths ?? null,
+      sqft: parsedData.sqft ?? null,
+      lotSize: parsedData.lotSize ?? null,
+      yearBuilt: parsedData.yearBuilt ?? null,
+      propertyType: parsedData.propertyType ?? null,
+      annualTaxes: parsedData.annualTaxes ?? null,
+      assessedValue: parsedData.assessedValue ?? null,
+    };
 
     const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
 
@@ -819,7 +826,14 @@ Only output the JSON.`;
       creditsUsed: creditRecord?.creditsUsed,
       maxCredits: creditRecord?.maxCredits,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (String(error?.message || '').toLowerCase().includes('timed out')) {
+      return res.status(504).json({
+        error: 'Public records are slow right now — please try again',
+        message: 'Public records are slow right now — please try again',
+        status: 504,
+      });
+    }
     return handleGeminiError(res, error, 'public-info');
   }
 });
