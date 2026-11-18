@@ -121,8 +121,8 @@ export interface SupportTicket {
 export const DEFAULT_SAAS_CONFIG: SaasConfig = {
   brandName: 'FSBO Compass',
   supportEmail: 'support@fsbocompass.com',
-  homeValueWorksheetUrl: 'https://ecenturyappraisal.com',
-  appraisalOrderUrl: 'https://ecenturyappraisal.com',
+  homeValueWorksheetUrl: 'https://ecenturyappraisal.com/home-value-worksheet',
+  appraisalOrderUrl: 'https://ecenturyappraisal.com/contact',
   plans: {
     trial: {
       id: 'trial',
@@ -133,7 +133,7 @@ export const DEFAULT_SAAS_CONFIG: SaasConfig = {
       propertyLimit: 1,
       photoLimit: 15,
       listingCopyLimit: 3,
-      aiCreditsMonthly: 25,
+      aiCreditsMonthly: 3,
       canPublishWebsite: false,
       canExportZip: true,
       features: [

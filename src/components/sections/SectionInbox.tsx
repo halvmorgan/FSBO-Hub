@@ -20,6 +20,12 @@ import {
 } from 'lucide-react';
 import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
 import { AiWaitNotice } from '../common/AiWaitNotice';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  postAiJson,
+  AiCreditLimitError,
+  normalizeFriendlyAiError,
+} from '../../lib/aiClient';
 
 interface SectionInboxProps {
   inquiries: InquiryItem[];
@@ -27,6 +33,7 @@ interface SectionInboxProps {
   settings: Settings;
   onUpdateInquiries: (inquiries: InquiryItem[]) => void;
   onNavigate: (tab: ActiveTab) => void;
+  onOpenPricing?: () => void;
 }
 
 type TemplateType =
@@ -43,7 +50,16 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
   settings,
   onUpdateInquiries,
   onNavigate,
+  onOpenPricing,
 }) => {
+  const { userProfile, saasConfig, syncAiCredits } = useAuth();
+  const planType = userProfile?.plan || 'trial';
+  const creditsUsed = userProfile?.aiCreditsUsed || 0;
+  const maxCredits =
+    planType === 'trial'
+      ? 3
+      : saasConfig.plans[planType]?.aiCreditsMonthly || 300;
+
   const [selectedInquiry, setSelectedInquiry] = useState<InquiryItem | null>(
     inquiries[0] || null
   );
@@ -68,11 +84,12 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
   const [generatedEmailSubject, setGeneratedEmailSubject] = useState('');
   const [generatedEmailBody, setGeneratedEmailBody] = useState('');
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<'sms' | 'email' | null>(null);
 
   const { waitMessage: replyWaitMsg } = useAiWaitTimer(isGeneratingReply, () => {
     setIsGeneratingReply(false);
-    setReplyError('AI is busy, please try again');
+    setReplyError('Something went wrong — please try again');
   });
 
   // Helper for 24h overdue check
@@ -161,45 +178,40 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
     setSelectedTemplate(template);
     setIsGeneratingReply(true);
     setReplyError(null);
+    setUpgradePrompt(null);
 
     try {
-      const res = await fetch('/api/gemini/inquiry-reply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await postAiJson<any>(
+        '/api/gemini/inquiry-reply',
+        {
           templateType: template,
           buyerName: selectedInquiry.name,
           buyerMessage: selectedInquiry.message,
           property,
           sellerName: settings.sellerName,
           sellerPhone: settings.sellerPhone,
-        }),
-      });
+        },
+        {
+          currentPlan: planType,
+          creditsUsed,
+          maxCredits,
+          onCreditsSynced: syncAiCredits,
+        }
+      );
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        console.error('[Gemini Server Diagnostic for Inquiry Reply]:', {
-          status: res.status,
-          rawGeminiError: errJson.rawGeminiError || errJson.message,
-          geminiStatus: errJson.geminiStatus,
-          modelTried: errJson.modelTried,
-          isAiBusy: errJson.isAiBusy,
-        });
-        const isBusy = errJson.isAiBusy || res.status === 503;
-        throw new Error(isBusy ? 'AI is busy, please try again in a few minutes' : (errJson.error || errJson.message || `AI reply unavailable (${res.status})`));
-      }
-      const data = await res.json();
-      console.log(`[Gemini Server Diagnostic] Inquiry Reply answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       setGeneratedSms(data.sms || '');
       setGeneratedEmailSubject(data.emailSubject || '');
       setGeneratedEmailBody(data.emailBody || '');
     } catch (err: any) {
       console.error(err);
-      setReplyError(err.message || 'AI is busy, please try again in a few minutes');
-      // Fallback
-      setGeneratedSms(
-        `Hi ${selectedInquiry.name}, thank you for your interest in ${property.address}! When is a good time for a quick 10-minute tour? - ${settings.sellerName}`
-      );
+      if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
+        setUpgradePrompt(err.message);
+      } else {
+        setReplyError(normalizeFriendlyAiError(err));
+        setGeneratedSms(
+          `Hi ${selectedInquiry.name}, thank you for your interest in ${property.address || 'our home'}! When is a good time for a quick 10-minute tour?${settings.sellerName ? ` - ${settings.sellerName}` : ''}`
+        );
+      }
     } finally {
       setIsGeneratingReply(false);
     }
@@ -404,6 +416,21 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
 
                   <AiWaitNotice message={replyWaitMsg} className="mt-1" />
 
+                  {upgradePrompt && (
+                    <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-2">
+                      <span className="font-semibold">{upgradePrompt}</span>
+                      {onOpenPricing && (
+                        <button
+                          type="button"
+                          onClick={onOpenPricing}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shrink-0"
+                        >
+                          Upgrade Plan
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {replyError && (
                     <div className="text-[11px] text-amber-700 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/40 flex items-center justify-between gap-2">
                       <span>{replyError}</span>
@@ -510,7 +537,7 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
                     type="tel"
                     value={inqPhone}
                     onChange={(e) => setInqPhone(e.target.value)}
-                    placeholder="(248) 555-0182"
+                    placeholder="(555) 000-0000"
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none"
                   />
                 </div>
@@ -586,7 +613,7 @@ export const SectionInbox: React.FC<SectionInboxProps> = ({
                 required
                 value={pastedJson}
                 onChange={(e) => setPastedJson(e.target.value)}
-                placeholder='[{"buyerName": "Sarah Jenkins", "buyerPhone": "248-555-0122", "buyerEmail": "sarah@email.com", "preferredDate": "Saturday 2pm"}]'
+                placeholder='[{"buyerName": "Alex Buyer", "buyerPhone": "555-000-0000", "buyerEmail": "buyer@example.com", "preferredDate": "Saturday 2pm"}]'
                 className="w-full p-3 font-mono text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none"
               />
               {pasteError && (

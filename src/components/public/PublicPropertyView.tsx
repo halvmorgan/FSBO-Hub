@@ -24,23 +24,38 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { PublicSiteDoc } from '../../types/saas';
 import { incrementFirestoreReadCount } from '../../lib/firestoreTracker';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface PublicPropertyViewProps {
   slug: string;
   onNavigateHome?: () => void;
+  onNavigatePricing?: () => void;
+  onGoToDashboard?: () => void;
+  onLogout?: () => void;
+}
+
+function slugifyAddress(addr: string): string {
+  return (addr || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
   slug,
   onNavigateHome,
+  onNavigatePricing,
+  onGoToDashboard,
+  onLogout,
 }) => {
+  const { currentUser, userProperties, logout } = useAuth();
   const [property, setProperty] = useState<PublicSiteDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [unpublishedOwnerUid, setUnpublishedOwnerUid] = useState<string | null>(null);
 
   // Gallery state
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Showing request form state
   const [buyerName, setBuyerName] = useState('');
@@ -61,7 +76,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
       if (!slug) return;
       const cacheKey = `fsbo_public_site_${slug}`;
       const cacheTimeKey = `fsbo_public_site_ts_${slug}`;
-      const CACHE_TTL_MS = 15 * 60 * 1000; // 15-minute cache prevents quota exhaustion on public visits
+      const CACHE_TTL_MS = 15 * 60 * 1000;
 
       let cachedData: PublicSiteDoc | null = null;
       let isFresh = false;
@@ -69,14 +84,17 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
         const raw = localStorage.getItem(cacheKey);
         const timeStr = localStorage.getItem(cacheTimeKey);
         if (raw) {
-          cachedData = JSON.parse(raw);
-          if (timeStr && Date.now() - parseInt(timeStr, 10) < CACHE_TTL_MS) {
-            isFresh = true;
+          const parsed = JSON.parse(raw) as PublicSiteDoc;
+          if (parsed && parsed.status === 'active') {
+            cachedData = parsed;
+            if (timeStr && Date.now() - parseInt(timeStr, 10) < CACHE_TTL_MS) {
+              isFresh = true;
+            }
           }
         }
       } catch (e) {}
 
-      // 1. If cached listing is fresh, render immediately with 0 Firestore reads!
+      // Check Firestore directly when cache is missing or expired (and never serve stale inactive data)
       if (isFresh && cachedData) {
         setProperty(cachedData);
         setCachedBanner(false);
@@ -84,27 +102,31 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
         return;
       }
 
-      // 2. Fetch from Firestore only if cache is absent or expired (>15 mins)
       try {
         setLoading(true);
         setError(null);
+        setUnpublishedOwnerUid(null);
         const ref = doc(db, 'publicSites', slug);
         incrementFirestoreReadCount(`publicSites/${slug}`, 1);
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
-          if (cachedData) {
-            setProperty(cachedData);
-            setCachedBanner(true);
-            return;
-          }
-          setError('This listing could not be found or may have been unlisted.');
+          try {
+            localStorage.removeItem(cacheKey);
+            localStorage.removeItem(cacheTimeKey);
+          } catch {}
+          setError('unpublished');
           return;
         }
 
         const data = snap.data() as PublicSiteDoc;
         if (data.status !== 'active') {
-          setError('This property listing is currently inactive or under contract.');
+          try {
+            localStorage.removeItem(cacheKey);
+            localStorage.removeItem(cacheTimeKey);
+          } catch {}
+          setUnpublishedOwnerUid(data.ownerUid || null);
+          setError('unpublished');
           return;
         }
 
@@ -115,12 +137,12 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
           localStorage.setItem(cacheTimeKey, Date.now().toString());
         } catch (e) {}
       } catch (err: any) {
-        console.warn('Error loading public site (falling back to cache):', err);
+        console.warn('Error loading public site:', err);
         if (cachedData) {
           setProperty(cachedData);
           setCachedBanner(true);
         } else {
-          setError('Property details are momentarily unavailable. Please check back shortly.');
+          setError('unpublished');
         }
       } finally {
         setLoading(false);
@@ -179,20 +201,65 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
   }
 
   if (error || !property) {
+    const isOwner = Boolean(
+      currentUser &&
+        (unpublishedOwnerUid === currentUser.uid ||
+          userProperties.some(
+            (p) =>
+              p.publishedSlug === slug ||
+              slugifyAddress(p.address) === slug
+          ))
+    );
+
     return (
       <div className="min-h-screen bg-[#F8F6F2] flex flex-col items-center justify-center p-6 text-center">
         <div className="w-16 h-16 bg-stone-200 text-stone-600 rounded-3xl flex items-center justify-center mb-4">
           <Building className="w-8 h-8" />
         </div>
-        <h2 className="text-2xl font-heading font-bold text-[#0F2A44]">Property Details Momentarily Unavailable</h2>
-        <p className="text-stone-600 max-w-md mt-2 text-sm">{error || 'This property showcase is momentarily unavailable. Please check back in a few moments.'}</p>
-        {onNavigateHome && (
-          <button
-            onClick={onNavigateHome}
-            className="mt-6 px-6 py-2.5 bg-[#0F2A44] text-white font-semibold text-sm rounded-xl hover:bg-[#1A3D60] transition-colors"
-          >
-            Go to Homepage
-          </button>
+        {isOwner ? (
+          <>
+            <h2 className="text-2xl font-heading font-bold text-[#0F2A44]">
+              Your property page isn't published yet
+            </h2>
+            <p className="text-stone-600 max-w-md mt-2 text-sm">
+              Your public property page is part of the $149 plan. Upgrade to publish it.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              {onNavigatePricing && (
+                <button
+                  type="button"
+                  onClick={onNavigatePricing}
+                  className="px-6 py-2.5 bg-[#FF6B5A] text-white font-bold text-sm rounded-xl hover:bg-[#e85a4a] transition-colors shadow-sm"
+                >
+                  Upgrade
+                </button>
+              )}
+              {(onGoToDashboard || onNavigateHome) && (
+                <button
+                  type="button"
+                  onClick={onGoToDashboard || onNavigateHome}
+                  className="px-6 py-2.5 bg-[#0F2A44] text-white font-semibold text-sm rounded-xl hover:bg-[#1A3D60] transition-colors"
+                >
+                  Dashboard
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-2xl font-heading font-bold text-[#0F2A44]">
+              This property page isn't published yet.
+            </h2>
+            {onNavigateHome && (
+              <button
+                type="button"
+                onClick={onNavigateHome}
+                className="mt-6 px-6 py-2.5 bg-[#0F2A44] text-white font-semibold text-sm rounded-xl hover:bg-[#1A3D60] transition-colors"
+              >
+                Go to Homepage
+              </button>
+            )}
+          </>
         )}
       </div>
     );
@@ -213,9 +280,9 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
       )}
       {/* Top Floating Sticky Header */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full uppercase tracking-wider">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full uppercase tracking-wider shrink-0">
               For Sale By Owner
             </span>
             <div className="truncate hidden sm:block">
@@ -226,7 +293,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
             <div className="text-right">
               <div className="text-lg sm:text-xl font-heading font-extrabold text-[#0F2A44]">
                 ${property.price.toLocaleString()}
@@ -238,6 +305,26 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
             >
               Schedule Tour
             </a>
+            {currentUser && (
+              <>
+                {onGoToDashboard && (
+                  <button
+                    type="button"
+                    onClick={onGoToDashboard}
+                    className="px-3 py-2 bg-[#0F2A44] hover:bg-[#1A3D60] text-white font-semibold text-xs rounded-xl transition-colors"
+                  >
+                    Dashboard
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => (onLogout ? onLogout() : logout())}
+                  className="px-3 py-2 border border-stone-300 text-stone-700 hover:text-red-600 hover:border-red-300 font-semibold text-xs rounded-xl transition-colors"
+                >
+                  Sign Out
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -326,7 +413,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
                           : 'border-transparent opacity-70 hover:opacity-100'
                       }`}
                     >
-                      <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                      <img src={photo.url} alt="" loading="lazy" className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>

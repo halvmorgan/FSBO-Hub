@@ -70,15 +70,15 @@ export const SectionPricing: React.FC<SectionPricingProps> = ({
   const avgAdjusted =
     validAdjustedPrices.length > 0
       ? Math.round(validAdjustedPrices.reduce((a, b) => a + b, 0) / validAdjustedPrices.length)
-      : property.price || 435000;
+      : property.price || 0;
 
   const lowPrice = Math.round(avgAdjusted * 0.96);
   const likelyPrice = avgAdjusted;
   const highPrice = Math.round(avgAdjusted * 1.04);
 
   // Overpriced check (> 5% above high range)
-  const isOverpriced = property.price > highPrice * 1.02;
-  const pctOver = Math.round(((property.price - likelyPrice) / likelyPrice) * 100);
+  const isOverpriced = highPrice > 0 && property.price > highPrice * 1.02;
+  const pctOver = likelyPrice > 0 ? Math.round(((property.price - likelyPrice) / likelyPrice) * 100) : 0;
 
   // Add Comp
   const handleAddComp = (e: React.FormEvent) => {
@@ -454,7 +454,13 @@ export const SectionPricing: React.FC<SectionPricingProps> = ({
           </p>
           <div className="pt-2">
             <a
-              href={settings.homeValueWorksheetUrl || 'https://ecenturyappraisal.com'}
+              href={
+                !settings.homeValueWorksheetUrl ||
+                settings.homeValueWorksheetUrl === 'https://ecenturyappraisal.com' ||
+                settings.homeValueWorksheetUrl.includes('[PASTE')
+                  ? 'https://ecenturyappraisal.com/home-value-worksheet'
+                  : settings.homeValueWorksheetUrl
+              }
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-[#0F2A44] bg-[#F2B544] hover:bg-[#e6a938] transition-all shadow-sm"
@@ -481,7 +487,13 @@ export const SectionPricing: React.FC<SectionPricingProps> = ({
           </p>
           <div className="pt-2">
             <a
-              href={settings.appraisalOrderUrl || 'https://ecenturyappraisal.com'}
+              href={
+                !settings.appraisalOrderUrl ||
+                settings.appraisalOrderUrl === 'https://ecenturyappraisal.com' ||
+                settings.appraisalOrderUrl.includes('[PASTE')
+                  ? 'https://ecenturyappraisal.com/contact'
+                  : settings.appraisalOrderUrl
+              }
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-sm"

@@ -202,6 +202,11 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
 
       await setDoc(doc(db, 'publicSites', slug), siteData);
       setPublishedDoc(siteData);
+      try {
+        sessionStorage.setItem(`fsbo_site_published_${slug}`, JSON.stringify(siteData));
+        localStorage.removeItem(`fsbo_public_site_${slug}`);
+        localStorage.removeItem(`fsbo_public_site_ts_${slug}`);
+      } catch {}
     } catch (err: any) {
       console.error('Publish error:', err);
       setPublishError(err.message || 'Failed to publish website to cloud.');
@@ -219,7 +224,13 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
         status: newStatus,
         updatedAt: new Date().toISOString(),
       });
-      setPublishedDoc({ ...publishedDoc, status: newStatus });
+      const updatedDoc = { ...publishedDoc, status: newStatus } as PublicSiteDoc;
+      setPublishedDoc(updatedDoc);
+      try {
+        sessionStorage.setItem(`fsbo_site_published_${slug}`, JSON.stringify(updatedDoc));
+        localStorage.removeItem(`fsbo_public_site_${slug}`);
+        localStorage.removeItem(`fsbo_public_site_ts_${slug}`);
+      } catch {}
     } catch (err: any) {
       alert('Error updating status: ' + err.message);
     }
@@ -489,6 +500,33 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Screen notice if seller flyer contact info is incomplete */}
+        {(!settings.sellerName.trim() || !settings.sellerPhone.trim() || !settings.sellerEmail.trim()) && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
+            <div className="flex flex-wrap items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                <strong>Print Flyer Contact Info:</strong>{' '}
+                {[
+                  !settings.sellerName.trim() ? 'Add your name in Settings' : null,
+                  !settings.sellerPhone.trim() ? 'Add your phone number in Settings' : null,
+                  !settings.sellerEmail.trim() ? 'Add your email in Settings' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                . Empty fields are left off the printed flyer.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('settings')}
+              className="px-3 py-1.5 rounded-lg bg-[#0F2A44] text-white font-bold text-xs hover:bg-[#1A3D60] transition-colors shrink-0"
+            >
+              Open Settings
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ============================================================ */}
@@ -609,6 +647,7 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
                 <img
                   src={photo.dataUrl}
                   alt={photo.caption}
+                  loading="lazy"
                   className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-200"
                 />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
@@ -681,9 +720,14 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
 
         {/* Footer */}
         <footer className="bg-[#0F2A44] text-white py-8 px-6 text-center text-xs space-y-2 border-t border-white/10">
-          <p className="font-bold text-sm">{property.address}, {property.city}, {property.state}</p>
+          <p className="font-bold text-sm">
+            {[property.address, property.city, property.state].filter(Boolean).join(', ') || 'Home For Sale By Owner'}
+          </p>
           <p className="text-slate-400">
-            For Sale By Owner &bull; Contact Seller: {settings.sellerName} &bull; {settings.sellerPhone} &bull; {settings.sellerEmail}
+            For Sale By Owner &bull; Contact Seller:{' '}
+            {settings.sellerName.trim() || 'Add your name in Settings'} &bull;{' '}
+            {settings.sellerPhone.trim() || 'Add your phone number in Settings'} &bull;{' '}
+            {settings.sellerEmail.trim() || 'Add your email in Settings'}
           </p>
         </footer>
       </div>
@@ -752,13 +796,19 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
 
           <div className="border-t-2 border-[#0F2A44] pt-4 flex items-center justify-between">
             <div>
-              <div className="text-base font-bold text-[#0F2A44]">
-                Direct Contact: {settings.sellerName}
-              </div>
-              <div className="text-sm font-extrabold text-[#FF6B5A]">
-                Call / Text: {settings.sellerPhone}
-              </div>
-              <div className="text-xs text-stone-500">{settings.sellerEmail}</div>
+              {settings.sellerName.trim() && (
+                <div className="text-base font-bold text-[#0F2A44]">
+                  Direct Contact: {settings.sellerName.trim()}
+                </div>
+              )}
+              {settings.sellerPhone.trim() && (
+                <div className="text-sm font-extrabold text-[#FF6B5A]">
+                  Call / Text: {settings.sellerPhone.trim()}
+                </div>
+              )}
+              {settings.sellerEmail.trim() && (
+                <div className="text-xs text-stone-500">{settings.sellerEmail.trim()}</div>
+              )}
             </div>
 
             {qrCodeDataUrl && (

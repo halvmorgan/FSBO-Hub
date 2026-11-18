@@ -71,6 +71,7 @@ interface AuthContextType {
   grantUserPlan: (uid: string, plan: PlanType, status?: string) => Promise<void>;
   deleteUserAccount: () => Promise<void>;
   deductCreditClient: (cost?: number) => void;
+  syncAiCredits: (newUsed: number) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -79,11 +80,31 @@ const SAAS_CONFIG_CACHE_KEY = 'fsbo_saas_config_cached';
 const SAAS_CONFIG_TIMESTAMP_KEY = 'fsbo_saas_config_ts';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours cache TTL to avoid Firestore quota burn
 
+function normalizeSaasConfig(raw: any): SaasConfig {
+  const merged = {
+    ...DEFAULT_SAAS_CONFIG,
+    ...raw,
+    plans: {
+      ...DEFAULT_SAAS_CONFIG.plans,
+      ...(raw?.plans || {}),
+    },
+  } as SaasConfig;
+  if (merged.plans?.trial) {
+    merged.plans.trial = {
+      ...DEFAULT_SAAS_CONFIG.plans.trial,
+      ...merged.plans.trial,
+      aiCreditsMonthly: 3,
+      listingCopyLimit: 3,
+    };
+  }
+  return merged;
+}
+
 function getInitialSaasConfig(): SaasConfig {
   try {
     const cached = localStorage.getItem(SAAS_CONFIG_CACHE_KEY);
     if (cached) {
-      return { ...DEFAULT_SAAS_CONFIG, ...JSON.parse(cached) };
+      return normalizeSaasConfig(JSON.parse(cached));
     }
   } catch (e) {
     // ignore
@@ -101,18 +122,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [hasLocalDataToImport, setHasLocalDataToImport] = useState(false);
 
-  // 1. Check for legacy local data on first load
+  // 1. Check for legacy local data only when matching current signed-in user and non-sample address
   useEffect(() => {
     try {
-      const localProp = localStorage.getItem('fsbo_property');
-      const localDismissed = localStorage.getItem('fsbo_import_dismissed');
-      if (localProp && !localDismissed) {
-        setHasLocalDataToImport(true);
+      if (!currentUser) {
+        setHasLocalDataToImport(false);
+        return;
       }
+      const ownerUid = localStorage.getItem('fsbo_owner_uid');
+      const localPropRaw = localStorage.getItem('fsbo_property');
+      const localDismissed = localStorage.getItem('fsbo_import_dismissed');
+      if (ownerUid === currentUser.uid && localPropRaw && !localDismissed) {
+        const parsed = JSON.parse(localPropRaw);
+        const addr = String(parsed?.address || '').trim();
+        const isSample = addr.includes('Meadowview') || addr.includes('Maple Grove');
+        if (addr && !isSample && !userProperties.some((p) => p.setupComplete || (p.address && p.address.trim()))) {
+          setHasLocalDataToImport(true);
+          return;
+        }
+      }
+      setHasLocalDataToImport(false);
     } catch (e) {
-      // ignore
+      setHasLocalDataToImport(false);
     }
-  }, []);
+  }, [currentUser, userProperties]);
 
   // 2. Load Global SaaS Config from Firestore `saasConfig/global` with 24-hour cache (0 reads on normal repeat visits)
   useEffect(() => {
@@ -124,7 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isFresh) {
           const cached = localStorage.getItem(SAAS_CONFIG_CACHE_KEY);
           if (cached) {
-            setSaasConfig({ ...DEFAULT_SAAS_CONFIG, ...JSON.parse(cached) });
+            setSaasConfig(normalizeSaasConfig(JSON.parse(cached)));
             return;
           }
         }
@@ -133,7 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         incrementFirestoreReadCount('saasConfig/global', 1);
         const snap = await getDoc(configRef);
         if (snap.exists()) {
-          const merged = { ...DEFAULT_SAAS_CONFIG, ...snap.data() } as SaasConfig;
+          const merged = normalizeSaasConfig(snap.data());
           setSaasConfig(merged);
           localStorage.setItem(SAAS_CONFIG_CACHE_KEY, JSON.stringify(merged));
           localStorage.setItem(SAAS_CONFIG_TIMESTAMP_KEY, Date.now().toString());
@@ -143,7 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const cached = localStorage.getItem(SAAS_CONFIG_CACHE_KEY);
           if (cached) {
-            setSaasConfig({ ...DEFAULT_SAAS_CONFIG, ...JSON.parse(cached) });
+            setSaasConfig(normalizeSaasConfig(JSON.parse(cached)));
           }
         } catch {}
       }
@@ -326,12 +359,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, []);
 
-  // 4. Sync User's Properties in Real Time (Subscribes strictly ONCE per signed-in user)
+  // 4. Sync User Profile & Properties in Real Time (Subscribes strictly ONCE per signed-in user)
   const currentUid = currentUser?.uid;
   useEffect(() => {
     if (!currentUid) return;
+    const unsubUser = onSnapshot(
+      doc(db, 'users', currentUid),
+      (snap) => {
+        if (snap.exists()) {
+          setUserProfile(snap.data() as UserProfile);
+        }
+      },
+      (err) => {
+        console.warn('User profile sync error:', err);
+      }
+    );
+
     const propsCol = collection(db, 'users', currentUid, 'properties');
-    const unsub = onSnapshot(
+    const unsubProps = onSnapshot(
       propsCol,
       (snap) => {
         incrementFirestoreReadCount(`users/${currentUid}/properties`, snap.docs.length);
@@ -350,7 +395,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Properties sync error:', err);
       }
     );
-    return () => unsub();
+    return () => {
+      unsubUser();
+      unsubProps();
+    };
   }, [currentUid]);
 
   // 5. Sync User's Notifications (Subscribes strictly ONCE per signed-in user)
@@ -421,6 +469,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signupWithEmail = async (email: string, pass: string, name?: string) => {
+    // Ensure a brand-new account starts clean with no prior demo/offline data
+    try {
+      const configCached = localStorage.getItem(SAAS_CONFIG_CACHE_KEY);
+      const configTs = localStorage.getItem(SAAS_CONFIG_TIMESTAMP_KEY);
+      localStorage.clear();
+      if (configCached) localStorage.setItem(SAAS_CONFIG_CACHE_KEY, configCached);
+      if (configTs) localStorage.setItem(SAAS_CONFIG_TIMESTAMP_KEY, configTs);
+    } catch {}
+    await clearAllDB().catch(() => {});
+
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     if (cred.user) {
       if (name && name.trim()) {
@@ -599,13 +657,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fbSignOut(auth);
   };
 
+  const syncAiCredits = (newUsed: number) => {
+    if (!currentUser) return;
+    setUserProfile((prev) => (prev ? { ...prev, aiCreditsUsed: newUsed } : prev));
+    updateDoc(doc(db, 'users', currentUser.uid), {
+      aiCreditsUsed: newUsed,
+      updatedAt: new Date().toISOString(),
+    }).catch(() => {});
+  };
+
   const deductCreditClient = (cost = 1) => {
     if (userProfile && currentUser) {
-      const updatedCredits = userProfile.aiCreditsUsed + cost;
-      setUserProfile({ ...userProfile, aiCreditsUsed: updatedCredits });
-      updateDoc(doc(db, 'users', currentUser.uid), {
-        aiCreditsUsed: updatedCredits,
-      }).catch(() => {});
+      const updatedCredits = (userProfile.aiCreditsUsed || 0) + cost;
+      syncAiCredits(updatedCredits);
     }
   };
 
@@ -644,6 +708,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         grantUserPlan,
         deleteUserAccount,
         deductCreditClient,
+        syncAiCredits,
       }}
     >
       {children}

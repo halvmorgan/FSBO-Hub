@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import {
   PropertyProfile,
   PhotoItem,
@@ -25,103 +25,165 @@ import {
   DEFAULT_DOCUMENTS,
   DEFAULT_PROMOTE_GROUPS,
 } from './lib/defaults';
-import { getAllPhotosFromDB, savePhotoToDB, clearAllDB } from './lib/indexedDb';
+import { getAllPhotosFromDB, clearAllDB } from './lib/indexedDb';
 import { sanitizeListingCopy } from './lib/formatAiCopy';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Sidebar } from './components/layout/Sidebar';
-import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
-
-// SaaS Public Pages
 import { LandingPage } from './components/public/LandingPage';
-import { PricingPage } from './components/public/PricingPage';
-import { TermsPage } from './components/public/TermsPage';
-import { PrivacyPage } from './components/public/PrivacyPage';
-import { PublicPropertyView } from './components/public/PublicPropertyView';
-import { PublicListingView } from './components/public/PublicListingView';
 import { AuthModal } from './components/auth/AuthModal';
-
-// SaaS Core Features
-import { SectionMyListing } from './components/sections/SectionMyListing';
-import { SectionAccount } from './components/account/SectionAccount';
-import { AdminPanel } from './components/admin/AdminPanel';
-import { HelpModal } from './components/common/HelpModal';
 import { NotificationBell } from './components/common/NotificationBell';
 import { uploadListingPhoto } from './lib/photoStorage';
 import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from './lib/firebase';
-
-// 13 Original Sections
-import { SectionDashboard } from './components/sections/SectionDashboard';
-import { SectionProfile } from './components/sections/SectionProfile';
-import { SectionAiFinder } from './components/sections/SectionAiFinder';
-import { SectionPhotos } from './components/sections/SectionPhotos';
-import { SectionPricing } from './components/sections/SectionPricing';
-import { SectionListing } from './components/sections/SectionListing';
-import { SectionSites } from './components/sections/SectionSites';
-import { SectionWebsite } from './components/sections/SectionWebsite';
-import { SectionShowings } from './components/sections/SectionShowings';
-import { SectionInbox } from './components/sections/SectionInbox';
-import { SectionPromote } from './components/sections/SectionPromote';
-import { SectionRefresh } from './components/sections/SectionRefresh';
-import { SectionClosing } from './components/sections/SectionClosing';
-import { SectionSettings } from './components/sections/SectionSettings';
-import { SectionHelp } from './components/sections/SectionHelp';
-
 import { CloudUpload, X, HelpCircle, Compass, AlertTriangle, User, LogOut, ChevronDown } from 'lucide-react';
 import { PlanType } from './types/saas';
 
-import houseExteriorFront from './assets/images/house_exterior_front_1794286496562.jpg';
-import houseKitchenInterior from './assets/images/house_kitchen_interior_1794286509490.jpg';
-import houseLivingRoom from './assets/images/house_living_room_1794286521686.jpg';
-import houseBackyard from './assets/images/house_backyard_1794286533470.jpg';
+// Route-level & tab-level code splitting for fast initial bundle load
+const PricingPage = lazy(() =>
+  import('./components/public/PricingPage').then((m) => ({ default: m.PricingPage }))
+);
+const TermsPage = lazy(() =>
+  import('./components/public/TermsPage').then((m) => ({ default: m.TermsPage }))
+);
+const PrivacyPage = lazy(() =>
+  import('./components/public/PrivacyPage').then((m) => ({ default: m.PrivacyPage }))
+);
+const PublicPropertyView = lazy(() =>
+  import('./components/public/PublicPropertyView').then((m) => ({ default: m.PublicPropertyView }))
+);
+const PublicListingView = lazy(() =>
+  import('./components/public/PublicListingView').then((m) => ({ default: m.PublicListingView }))
+);
 
-// Sample architectural demo photos
-const SAMPLE_PHOTOS: PhotoItem[] = [
-  {
-    id: 'sample-front',
-    dataUrl: houseExteriorFront,
-    caption: 'Front Exterior & Beautiful Landscaping',
-    isCover: true,
-    roomCategory: 'Exterior',
-    order: 0,
-    coachQuality: 'Great',
-    coachTip: 'Superb daylight exposure and level wide shot highlighting curb appeal and architecture.',
-    analyzed: true,
-  },
-  {
-    id: 'sample-kitchen',
-    dataUrl: houseKitchenInterior,
-    caption: 'Chef Kitchen with Quartz Waterfall Island & Stainless Appliances',
-    isCover: false,
-    roomCategory: 'Kitchen',
-    order: 1,
-    coachQuality: 'Great',
-    coachTip: 'Spotless quartz countertops and brilliant natural lighting throughout.',
-    analyzed: true,
-  },
-  {
-    id: 'sample-living',
-    dataUrl: houseLivingRoom,
-    caption: 'Spacious Living Room with Hardwood Floors & Stone Fireplace',
-    isCover: false,
-    roomCategory: 'Living Room',
-    order: 2,
-    coachQuality: 'Great',
-    coachTip: 'Warm and inviting seating layout with excellent natural window lighting.',
-    analyzed: true,
-  },
-  {
-    id: 'sample-backyard',
-    dataUrl: houseBackyard,
-    caption: 'Private Backyard with Trex Deck & Mature Wooded Boundary',
-    isCover: false,
-    roomCategory: 'Outdoor',
-    order: 3,
-    coachQuality: 'Great',
-    coachTip: 'Sunny deck shot emphasizing generous lawn space and private green perimeter.',
-    analyzed: true,
-  },
-];
+const OnboardingWizard = lazy(() =>
+  import('./components/onboarding/OnboardingWizard').then((m) => ({ default: m.OnboardingWizard }))
+);
+const HelpModal = lazy(() =>
+  import('./components/common/HelpModal').then((m) => ({ default: m.HelpModal }))
+);
+const AdminPanel = lazy(() =>
+  import('./components/admin/AdminPanel').then((m) => ({ default: m.AdminPanel }))
+);
+
+const SectionMyListing = lazy(() =>
+  import('./components/sections/SectionMyListing').then((m) => ({ default: m.SectionMyListing }))
+);
+const SectionAccount = lazy(() =>
+  import('./components/account/SectionAccount').then((m) => ({ default: m.SectionAccount }))
+);
+const SectionDashboard = lazy(() =>
+  import('./components/sections/SectionDashboard').then((m) => ({ default: m.SectionDashboard }))
+);
+const SectionProfile = lazy(() =>
+  import('./components/sections/SectionProfile').then((m) => ({ default: m.SectionProfile }))
+);
+const SectionAiFinder = lazy(() =>
+  import('./components/sections/SectionAiFinder').then((m) => ({ default: m.SectionAiFinder }))
+);
+const SectionPhotos = lazy(() =>
+  import('./components/sections/SectionPhotos').then((m) => ({ default: m.SectionPhotos }))
+);
+const SectionPricing = lazy(() =>
+  import('./components/sections/SectionPricing').then((m) => ({ default: m.SectionPricing }))
+);
+const SectionListing = lazy(() =>
+  import('./components/sections/SectionListing').then((m) => ({ default: m.SectionListing }))
+);
+const SectionSites = lazy(() =>
+  import('./components/sections/SectionSites').then((m) => ({ default: m.SectionSites }))
+);
+const SectionWebsite = lazy(() =>
+  import('./components/sections/SectionWebsite').then((m) => ({ default: m.SectionWebsite }))
+);
+const SectionShowings = lazy(() =>
+  import('./components/sections/SectionShowings').then((m) => ({ default: m.SectionShowings }))
+);
+const SectionInbox = lazy(() =>
+  import('./components/sections/SectionInbox').then((m) => ({ default: m.SectionInbox }))
+);
+const SectionPromote = lazy(() =>
+  import('./components/sections/SectionPromote').then((m) => ({ default: m.SectionPromote }))
+);
+const SectionRefresh = lazy(() =>
+  import('./components/sections/SectionRefresh').then((m) => ({ default: m.SectionRefresh }))
+);
+const SectionClosing = lazy(() =>
+  import('./components/sections/SectionClosing').then((m) => ({ default: m.SectionClosing }))
+);
+const SectionSettings = lazy(() =>
+  import('./components/sections/SectionSettings').then((m) => ({ default: m.SectionSettings }))
+);
+const SectionHelp = lazy(() =>
+  import('./components/sections/SectionHelp').then((m) => ({ default: m.SectionHelp }))
+);
+
+const BLANK_PROPERTY: PropertyProfile = {
+  ...DEFAULT_PROPERTY,
+  address: '',
+  city: '',
+  state: 'Michigan',
+  zip: '',
+  price: 0,
+  originalPrice: 0,
+  beds: 0,
+  bathsFull: 0,
+  bathsHalf: 0,
+  sqft: 0,
+  lotSize: '',
+  yearBuilt: 0,
+  taxes: 0,
+  schoolDistrict: '',
+  heating: '',
+  cooling: '',
+  garage: '',
+  basement: '',
+  roof: '',
+  upgrades: [],
+  specialNotes: ['', '', ''],
+  features: [],
+  walkthroughVideoUrl: '',
+  photos: [],
+  description: '',
+  setupComplete: false,
+};
+
+const EMPTY_CLOSING_TEAM: ClosingTeamInfo = {
+  attorneyOrTitle: '',
+  contactPerson: '',
+  phone: '',
+  email: '',
+  flatFeeQuoted: 0,
+  notes: '',
+};
+
+function readUserKey<T>(uid: string, key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(`fsbo_u_${uid}_${key}`);
+    if (raw !== null) {
+      return JSON.parse(raw) as T;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return fallback;
+}
+
+function writeUserKey(uid: string, key: string, value: any) {
+  try {
+    localStorage.setItem(`fsbo_u_${uid}_${key}`, JSON.stringify(value));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function PageLoader() {
+  return (
+    <div className="min-h-[45vh] flex flex-col items-center justify-center p-8 text-center font-sans">
+      <div className="w-10 h-10 border-4 border-[#FF6B5A] border-t-transparent rounded-full animate-spin mb-3" />
+      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Loading...</p>
+    </div>
+  );
+}
 
 function AppContent() {
   const {
@@ -147,12 +209,10 @@ function AppContent() {
   const [publicPropertySlug, setPublicPropertySlug] = useState<string>('');
   const [publicListingId, setPublicListingId] = useState<string>('');
 
-  // Modals & Menus
+  // Modals & Menus (pendingPlan is strictly in-memory, never persisted across refreshes)
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('signup');
-  const [pendingPlan, setPendingPlan] = useState<PlanType | null>(() => {
-    return (localStorage.getItem('fsbo_pending_plan') as PlanType) || null;
-  });
+  const [pendingPlan, setPendingPlan] = useState<PlanType | null>(null);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [skippedWizard, setSkippedWizard] = useState(false);
@@ -160,195 +220,118 @@ function AppContent() {
   const [loggedOutMessage, setLoggedOutMessage] = useState<string | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const hydratedUidRef = useRef<string | null>(null);
 
-  // 1. Settings
-  const [settings, setSettings] = useState<Settings>(() => {
-    const saved = localStorage.getItem('fsbo_settings');
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
-  });
+  // Clean empty initial state (no sample/other-user localStorage leaked before auth resolves)
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [property, setProperty] = useState<PropertyProfile>(BLANK_PROPERTY);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [comps, setComps] = useState<CompSale[]>(DEFAULT_COMPS);
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryRecord[]>([]);
+  const [listingCopy, setListingCopy] = useState<ListingCopyData | null>(null);
+  const [sites, setSites] = useState<ListingSiteItem[]>(DEFAULT_SITES);
+  const [showings, setShowings] = useState<ShowingItem[]>([]);
+  const [openHouses, setOpenHouses] = useState<OpenHouseItem[]>([]);
+  const [visitorLog, setVisitorLog] = useState<VisitorLogItem[]>([]);
+  const [inquiries, setInquiries] = useState<InquiryItem[]>([]);
+  const [documents, setDocuments] = useState<DocumentItem[]>(DEFAULT_DOCUMENTS);
+  const [offers, setOffers] = useState<OfferItem[]>([]);
+  const [closingTeam, setClosingTeam] = useState<ClosingTeamInfo>(EMPTY_CLOSING_TEAM);
+  const [promoteGroups, setPromoteGroups] = useState<PromoteGroup[]>(DEFAULT_PROMOTE_GROUPS);
+  const [lastRefreshDate, setLastRefreshDate] = useState<string>(() =>
+    new Date().toISOString().split('T')[0]
+  );
 
-  // Clean empty property template for real users (demo data only loaded in Demo Preview)
-  const BLANK_PROPERTY: PropertyProfile = {
-    ...DEFAULT_PROPERTY,
-    address: '',
-    city: '',
-    state: 'Michigan',
-    zip: '',
-    price: 0,
-    originalPrice: 0,
-    beds: 0,
-    bathsFull: 0,
-    bathsHalf: 0,
-    sqft: 0,
-    lotSize: '',
-    yearBuilt: 0,
-    taxes: 0,
-    schoolDistrict: '',
-    heating: '',
-    cooling: '',
-    garage: '',
-    basement: '',
-    roof: '',
-    upgrades: [],
-    specialNotes: ['', '', ''],
-    features: [],
-    walkthroughVideoUrl: '',
-    photos: [],
-    description: '',
-    setupComplete: false,
+  // Reset all workspace state helper
+  const resetStateToEmpty = () => {
+    setSettings(DEFAULT_SETTINGS);
+    setProperty(BLANK_PROPERTY);
+    setPhotos([]);
+    setComps(DEFAULT_COMPS);
+    setPriceHistory([]);
+    setListingCopy(null);
+    setSites(DEFAULT_SITES);
+    setShowings([]);
+    setOpenHouses([]);
+    setVisitorLog([]);
+    setInquiries([]);
+    setDocuments(DEFAULT_DOCUMENTS);
+    setOffers([]);
+    setClosingTeam(EMPTY_CLOSING_TEAM);
+    setPromoteGroups(DEFAULT_PROMOTE_GROUPS);
+    setLastRefreshDate(new Date().toISOString().split('T')[0]);
   };
 
-  // 2. Property Profile
-  const [property, setProperty] = useState<PropertyProfile>(() => {
-    const saved = localStorage.getItem('fsbo_property');
-    return saved ? JSON.parse(saved) : BLANK_PROPERTY;
-  });
+  // Hydrate strictly per-user state whenever authenticated user changes
+  useEffect(() => {
+    if (demoMode) return;
 
-  // 3. Photos (IndexedDB + fallback state)
-  const [photos, setPhotos] = useState<PhotoItem[]>([]);
-
-  // 4. Comps
-  const [comps, setComps] = useState<CompSale[]>(() => {
-    const saved = localStorage.getItem('fsbo_comps');
-    return saved ? JSON.parse(saved) : DEFAULT_COMPS;
-  });
-
-  // 5. Price History
-  const [priceHistory, setPriceHistory] = useState<PriceHistoryRecord[]>(() => {
-    const saved = localStorage.getItem('fsbo_price_history');
-    return saved
-      ? JSON.parse(saved)
-      : [
-          {
-            id: 'ph-orig',
-            date: '2026-11-01',
-            oldPrice: 445000,
-            newPrice: 435000,
-            reason: 'Positioned aggressively for quick sale',
-          },
-        ];
-  });
-
-  // 6. Listing Copy
-  const [listingCopy, setListingCopy] = useState<ListingCopyData | null>(() => {
-    try {
-      const saved = localStorage.getItem('fsbo_listing_copy');
-      if (saved) {
-        return sanitizeListingCopy(JSON.parse(saved));
+    const uid = currentUser?.uid || null;
+    if (!uid) {
+      if (hydratedUidRef.current !== null) {
+        hydratedUidRef.current = null;
+        resetStateToEmpty();
       }
-    } catch (e) {
-      console.warn('Could not load saved listing copy:', e);
+      return;
     }
-    return null;
-  });
 
-  // 7. Sites
-  const [sites, setSites] = useState<ListingSiteItem[]>(() => {
-    const saved = localStorage.getItem('fsbo_sites');
-    return saved ? JSON.parse(saved) : DEFAULT_SITES;
-  });
+    if (hydratedUidRef.current !== uid) {
+      hydratedUidRef.current = uid;
+      const loadedSettings = readUserKey<Settings>(uid, 'settings', DEFAULT_SETTINGS);
+      setSettings({
+        ...DEFAULT_SETTINGS,
+        ...loadedSettings,
+        sellerName:
+          loadedSettings.sellerName ||
+          userProfile?.displayName ||
+          currentUser?.displayName ||
+          '',
+        sellerEmail:
+          loadedSettings.sellerEmail ||
+          userProfile?.email ||
+          currentUser?.email ||
+          '',
+      });
+      setProperty(readUserKey<PropertyProfile>(uid, 'property', BLANK_PROPERTY));
+      setComps(readUserKey<CompSale[]>(uid, 'comps', DEFAULT_COMPS));
+      setPriceHistory(readUserKey<PriceHistoryRecord[]>(uid, 'price_history', []));
+      const savedCopy = readUserKey<ListingCopyData | null>(uid, 'listing_copy', null);
+      setListingCopy(savedCopy ? sanitizeListingCopy(savedCopy) : null);
+      setSites(readUserKey<ListingSiteItem[]>(uid, 'sites', DEFAULT_SITES));
+      setShowings(readUserKey<ShowingItem[]>(uid, 'showings', []));
+      setOpenHouses(readUserKey<OpenHouseItem[]>(uid, 'open_houses', []));
+      setVisitorLog(readUserKey<VisitorLogItem[]>(uid, 'visitor_log', []));
+      setInquiries(readUserKey<InquiryItem[]>(uid, 'inquiries', []));
+      setDocuments(readUserKey<DocumentItem[]>(uid, 'documents', DEFAULT_DOCUMENTS));
+      setOffers(readUserKey<OfferItem[]>(uid, 'offers', []));
+      setClosingTeam(readUserKey<ClosingTeamInfo>(uid, 'closing_team', EMPTY_CLOSING_TEAM));
+      setPromoteGroups(readUserKey<PromoteGroup[]>(uid, 'promote_groups', DEFAULT_PROMOTE_GROUPS));
+      const savedRefresh = localStorage.getItem(`fsbo_u_${uid}_last_refresh`);
+      setLastRefreshDate(savedRefresh || new Date().toISOString().split('T')[0]);
+    }
+  }, [currentUser?.uid, demoMode, userProfile?.displayName, userProfile?.email]);
 
-  // 8. Showings (clean empty array for real users; demo data loaded only in Demo Preview)
-  const [showings, setShowings] = useState<ShowingItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('fsbo_showings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return Array.isArray(parsed)
-          ? parsed.filter((s: ShowingItem) => s.id !== 'show-demo-1' && s.id !== 'show-demo-2')
-          : [];
-      }
-    } catch {}
-    return [];
-  });
+  // Auto-populate sellerName / sellerEmail once userProfile finishes loading if still blank
+  useEffect(() => {
+    if (!currentUser || demoMode || !userProfile) return;
+    setSettings((prev) => {
+      const nextName = prev.sellerName || userProfile.displayName || currentUser.displayName || '';
+      const nextEmail = prev.sellerEmail || userProfile.email || currentUser.email || '';
+      if (nextName === prev.sellerName && nextEmail === prev.sellerEmail) return prev;
+      return {
+        ...prev,
+        sellerName: nextName,
+        sellerEmail: nextEmail,
+      };
+    });
+  }, [currentUser, userProfile, demoMode]);
 
-  // 9. Open Houses
-  const [openHouses, setOpenHouses] = useState<OpenHouseItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('fsbo_open_houses');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return Array.isArray(parsed)
-          ? parsed.filter((oh: OpenHouseItem) => oh.id !== 'oh-demo-1')
-          : [];
-      }
-    } catch {}
-    return [];
-  });
-
-  // 10. Visitor Log
-  const [visitorLog, setVisitorLog] = useState<VisitorLogItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('fsbo_visitor_log');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return Array.isArray(parsed)
-          ? parsed.filter((v: VisitorLogItem) => v.id !== 'vis-1')
-          : [];
-      }
-    } catch {}
-    return [];
-  });
-
-  // 11. Inquiries (clean empty array for real users; synced with Firestore /listings/{listingId}/inquiries)
-  const [inquiries, setInquiries] = useState<InquiryItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('fsbo_inquiries');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return Array.isArray(parsed)
-          ? parsed.filter((i: InquiryItem) => i.id !== 'inq-1' && i.id !== 'inq-2')
-          : [];
-      }
-    } catch {}
-    return [];
-  });
-
-  // 12. Documents
-  const [documents, setDocuments] = useState<DocumentItem[]>(() => {
-    const saved = localStorage.getItem('fsbo_documents');
-    return saved ? JSON.parse(saved) : DEFAULT_DOCUMENTS;
-  });
-
-  // 13. Offers
-  const [offers, setOffers] = useState<OfferItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('fsbo_offers');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return Array.isArray(parsed)
-          ? parsed.filter((o: OfferItem) => o.id !== 'offer-1')
-          : [];
-      }
-    } catch {}
-    return [];
-  });
-
-  // 14. Closing Team
-  const [closingTeam, setClosingTeam] = useState<ClosingTeamInfo>(() => {
-    const saved = localStorage.getItem('fsbo_closing_team');
-    return saved
-      ? JSON.parse(saved)
-      : {
-          attorneyOrTitle: 'Transnation Title Agency (Rochester Branch)',
-          contactPerson: 'Kelly Thompson (Senior Escrow Officer)',
-          phone: '(248) 555-8820',
-          email: 'kthompson@transnationtitle.com',
-          flatFeeQuoted: 750,
-          notes: 'Will draft standard state purchase agreement, hold earnest money in escrow, and coordinate closing.',
-        };
-  });
-
-  // 15. Promote Groups
-  const [promoteGroups, setPromoteGroups] = useState<PromoteGroup[]>(() => {
-    const saved = localStorage.getItem('fsbo_promote_groups');
-    return saved ? JSON.parse(saved) : DEFAULT_PROMOTE_GROUPS;
-  });
-
-  // 16. Refresh Tracker
-  const [lastRefreshDate, setLastRefreshDate] = useState<string>(() => {
-    return localStorage.getItem('fsbo_last_refresh') || new Date(Date.now() - 4 * 86400000).toISOString().split('T')[0];
-  });
+  // Never keep Login/Welcome Back modal open once a user is signed in
+  useEffect(() => {
+    if (currentUser && authModalOpen) {
+      setAuthModalOpen(false);
+    }
+  }, [currentUser, authModalOpen]);
 
   // Close top-right profile menu on outside click
   useEffect(() => {
@@ -361,8 +344,10 @@ function AppContent() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Initial URL Routing & Protected Route Back-Button Guard
+  // Initial URL Routing & Protected Route Back-Button Guard (waits until auth resolves!)
   useEffect(() => {
+    if (authLoading) return;
+
     const handleUrlRouting = (popEvent?: PopStateEvent) => {
       const path = window.location.pathname;
       if (path.startsWith('/listing/')) {
@@ -390,6 +375,21 @@ function AppContent() {
         return;
       }
 
+      if (path === '/signup' || path === '/login') {
+        if (currentUser) {
+          window.history.replaceState({ protected: true }, '', '/');
+          setAuthModalOpen(false);
+          setCurrentView('app');
+          setActiveTab('my-listing');
+        } else {
+          setPendingPlan(null);
+          setCurrentView('landing');
+          setAuthModalMode(path === '/signup' ? 'signup' : 'login');
+          setAuthModalOpen(true);
+        }
+        return;
+      }
+
       const isProtectedPath =
         path === '/admin' ||
         path === '/account' ||
@@ -399,9 +399,9 @@ function AppContent() {
 
       if (!currentUser && !demoMode) {
         setCurrentView('landing');
-        // If user navigated to a protected path or pressed Back onto a protected history entry while logged out, send to Sign In
         if (isProtectedPath || popEvent?.state?.protected) {
           window.history.replaceState({ loggedOut: true }, '', '/');
+          setPendingPlan(null);
           setAuthModalMode('login');
           setAuthModalOpen(true);
         }
@@ -428,42 +428,53 @@ function AppContent() {
     const onPopState = (e: PopStateEvent) => handleUrlRouting(e);
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [currentUser, demoMode]);
+  }, [currentUser, demoMode, authLoading]);
 
   // Prevent browser bfcache from displaying stale protected screens after logout
   useEffect(() => {
     const onPageShow = () => {
+      if (authLoading) return;
       const path = window.location.pathname;
       const isPublic =
         path.startsWith('/listing/') ||
         path.startsWith('/p/') ||
         path === '/pricing' ||
         path === '/terms' ||
-        path === '/privacy';
+        path === '/privacy' ||
+        path === '/signup' ||
+        path === '/login';
       if (!currentUser && !demoMode && !isPublic && currentView === 'app') {
         setCurrentView('landing');
+        setPendingPlan(null);
         setAuthModalMode('login');
         setAuthModalOpen(true);
       }
     };
     window.addEventListener('pageshow', onPageShow);
     return () => window.removeEventListener('pageshow', onPageShow);
-  }, [currentUser, demoMode, currentView]);
+  }, [currentUser, demoMode, currentView, authLoading]);
 
   // Check whether signed-in user has filled in their personalized home details / onboarding info
   const hasFilledInfo = Boolean(
     userProfile?.setupComplete ||
     userProfile?.hasCompletedOnboarding ||
-    localStorage.getItem('fsbo_setup_complete') === 'true' ||
     property.setupComplete ||
-    (property.address && property.address !== '4288 Meadowview Drive' && property.price > 0)
+    (property.address && property.price > 0)
   );
+
+  const handleCloseAuthModal = () => {
+    setAuthModalOpen(false);
+    setPendingPlan(null);
+    if (window.location.pathname === '/signup' || window.location.pathname === '/login') {
+      window.history.replaceState({}, '', '/');
+    }
+  };
 
   const handleAuthSuccess = () => {
     setAuthModalOpen(false);
     setLoggedOutMessage(null);
     setSkippedWizard(false);
-    window.history.pushState({ protected: true }, '', '/');
+    window.history.replaceState({ protected: true }, '', '/');
     setCurrentView('app');
     setActiveTab('my-listing');
   };
@@ -485,7 +496,7 @@ function AppContent() {
 
   // Sync activeProperty from Cloud into state
   useEffect(() => {
-    if (activeProperty) {
+    if (activeProperty && !demoMode) {
       setProperty((prev) => ({
         ...prev,
         ...activeProperty,
@@ -494,7 +505,7 @@ function AppContent() {
         setPhotos(activeProperty.photos);
       }
     }
-  }, [activeProperty]);
+  }, [activeProperty, demoMode]);
 
   // Helper to sync public listing document (/listings/{listingId}) for buyer view
   const syncPublicListing = async (
@@ -502,7 +513,7 @@ function AppContent() {
     photosToSync: PhotoItem[],
     openHousesToSync: OpenHouseItem[]
   ) => {
-    if (!currentUser) return;
+    if (!currentUser || demoMode) return;
     const listingId = propToSync.id || activeProperty?.id || propToSync.publishedSlug || currentUser.uid;
     if (!listingId) return;
 
@@ -558,7 +569,7 @@ function AppContent() {
     }
   };
 
-  // Load real buyer leads/inquiries submitted to /listings/{listingId}/inquiries (1 read per load)
+  // Load real buyer leads/inquiries submitted to /listings/{listingId}/inquiries
   useEffect(() => {
     const listingId = property.id || activeProperty?.id;
     if (!currentUser || !listingId || demoMode) return;
@@ -599,7 +610,7 @@ function AppContent() {
     loadBuyerInquiries();
   }, [currentUser, property.id, activeProperty?.id, demoMode]);
 
-  // Clean up Stripe checkout callback parameters from the address bar (no client-side plan grants)
+  // Clean up Stripe checkout callback parameters from the address bar
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has('payment_success') || params.has('session_id') || params.has('canceled') || params.has('upgraded')) {
@@ -607,20 +618,15 @@ function AppContent() {
     }
   }, []);
 
-  // Load photos from IndexedDB on startup (no sample photos forced onto real users)
+  // Load photos from IndexedDB for authenticated users (never force sample photos onto real users)
   useEffect(() => {
     const loadPhotos = async () => {
-      if (!currentUser && !demoMode) return;
+      if (!currentUser || demoMode) return;
       try {
         const dbPhotos = await getAllPhotosFromDB();
         const hasLegacyUnsplash = dbPhotos && dbPhotos.some((p: any) => p.dataUrl?.includes('unsplash'));
         if (dbPhotos && dbPhotos.length > 0 && !hasLegacyUnsplash) {
-          setPhotos(dbPhotos);
-        } else if (demoMode) {
-          for (const sp of SAMPLE_PHOTOS) {
-            await savePhotoToDB(sp.id, sp.dataUrl, { caption: sp.caption, isCover: sp.isCover });
-          }
-          setPhotos(SAMPLE_PHOTOS);
+          setPhotos((prev) => (prev.length > 0 ? prev : dbPhotos));
         }
       } catch (err) {
         console.warn('Could not read IndexedDB photos:', err);
@@ -629,83 +635,83 @@ function AppContent() {
     loadPhotos();
   }, [currentUser, demoMode]);
 
-  // Sync to LocalStorage ONLY when authenticated or in demo mode (never re-write after logout)
+  // Persist to per-user namespaced localStorage ONLY when authenticated and NOT in demoMode
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_settings', JSON.stringify(settings));
-  }, [settings, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'settings', settings);
+  }, [settings, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_property', JSON.stringify(property));
-  }, [property, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'property', property);
+  }, [property, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_comps', JSON.stringify(comps));
-  }, [comps, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'comps', comps);
+  }, [comps, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_price_history', JSON.stringify(priceHistory));
-  }, [priceHistory, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'price_history', priceHistory);
+  }, [priceHistory, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
+    if (!currentUser?.uid || demoMode) return;
     if (listingCopy) {
-      localStorage.setItem('fsbo_listing_copy', JSON.stringify(listingCopy));
+      writeUserKey(currentUser.uid, 'listing_copy', listingCopy);
     }
-  }, [listingCopy, currentUser, demoMode]);
+  }, [listingCopy, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_sites', JSON.stringify(sites));
-  }, [sites, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'sites', sites);
+  }, [sites, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_showings', JSON.stringify(showings));
-  }, [showings, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'showings', showings);
+  }, [showings, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_open_houses', JSON.stringify(openHouses));
-  }, [openHouses, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'open_houses', openHouses);
+  }, [openHouses, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_visitor_log', JSON.stringify(visitorLog));
-  }, [visitorLog, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'visitor_log', visitorLog);
+  }, [visitorLog, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_inquiries', JSON.stringify(inquiries));
-  }, [inquiries, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'inquiries', inquiries);
+  }, [inquiries, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_documents', JSON.stringify(documents));
-  }, [documents, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'documents', documents);
+  }, [documents, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_offers', JSON.stringify(offers));
-  }, [offers, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'offers', offers);
+  }, [offers, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_closing_team', JSON.stringify(closingTeam));
-  }, [closingTeam, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'closing_team', closingTeam);
+  }, [closingTeam, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_promote_groups', JSON.stringify(promoteGroups));
-  }, [promoteGroups, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    writeUserKey(currentUser.uid, 'promote_groups', promoteGroups);
+  }, [promoteGroups, currentUser?.uid, demoMode]);
 
   useEffect(() => {
-    if (!currentUser && !demoMode) return;
-    localStorage.setItem('fsbo_last_refresh', lastRefreshDate);
-  }, [lastRefreshDate, currentUser, demoMode]);
+    if (!currentUser?.uid || demoMode) return;
+    localStorage.setItem(`fsbo_u_${currentUser.uid}_last_refresh`, lastRefreshDate);
+  }, [lastRefreshDate, currentUser?.uid, demoMode]);
 
   // Dark mode class sync
   useEffect(() => {
@@ -771,23 +777,19 @@ function AppContent() {
 
   const handleResetDefaults = async () => {
     await clearAllDB();
-    localStorage.clear();
-    setSettings(DEFAULT_SETTINGS);
-    setProperty(DEFAULT_PROPERTY);
-    setComps(DEFAULT_COMPS);
-    setSites(DEFAULT_SITES);
-    setDocuments(DEFAULT_DOCUMENTS);
-    setPromoteGroups(DEFAULT_PROMOTE_GROUPS);
-    setPhotos(SAMPLE_PHOTOS);
-    for (const sp of SAMPLE_PHOTOS) {
-      await savePhotoToDB(sp.id, sp.dataUrl, { caption: sp.caption, isCover: sp.isCover });
+    if (currentUser?.uid) {
+      const prefix = `fsbo_u_${currentUser.uid}_`;
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith(prefix)) localStorage.removeItem(k);
+      });
     }
-    setActiveTab('dashboard');
+    resetStateToEmpty();
+    setActiveTab('my-listing');
   };
 
   const handleUpdateProperty = async (newProp: PropertyProfile) => {
     setProperty(newProp);
-    if (currentUser) {
+    if (currentUser && !demoMode) {
       await updateCurrentProperty(newProp);
       await syncPublicListing(newProp, photos, openHouses);
     }
@@ -795,7 +797,7 @@ function AppContent() {
 
   const handleUpdatePhotos = async (newPhotos: PhotoItem[]) => {
     let processedPhotos = newPhotos;
-    if (currentUser) {
+    if (currentUser && !demoMode) {
       processedPhotos = await Promise.all(
         newPhotos.map(async (p) => {
           if (p.dataUrl && !p.dataUrl.startsWith('http') && !p.dataUrl.startsWith('/')) {
@@ -812,7 +814,7 @@ function AppContent() {
       photos: processedPhotos,
     };
     setProperty(updatedProp);
-    if (currentUser) {
+    if (currentUser && !demoMode) {
       await updateCurrentProperty(updatedProp);
       await syncPublicListing(updatedProp, processedPhotos, openHouses);
     }
@@ -825,6 +827,8 @@ function AppContent() {
     setHelpModalOpen(false);
     setDemoMode(false);
     setSkippedWizard(false);
+    setPendingPlan(null);
+    hydratedUidRef.current = null;
 
     try {
       await logout();
@@ -832,68 +836,36 @@ function AppContent() {
       console.error('Error during logout:', err);
     }
 
-    // Clear saved user & listing state from memory
-    setSettings(DEFAULT_SETTINGS);
-    setProperty(BLANK_PROPERTY);
-    setPhotos([]);
-    setListingCopy(null);
-    setShowings([]);
-    setOpenHouses([]);
-    setVisitorLog([]);
-    setInquiries([]);
-    setOffers([]);
+    resetStateToEmpty();
     setActiveTab('my-listing');
     setLoggedOutMessage("You've been logged out.");
 
-    // Replace current history state so Back button cannot return to protected pages while signed out
     window.history.replaceState({ loggedOut: true }, '', '/');
     setCurrentView('landing');
   };
 
   const handleStartDemoPreview = async () => {
     setLoggedOutMessage(null);
-    setProperty(DEFAULT_PROPERTY);
-    setPhotos(SAMPLE_PHOTOS);
-    for (const sp of SAMPLE_PHOTOS) {
-      await savePhotoToDB(sp.id, sp.dataUrl, { caption: sp.caption, isCover: sp.isCover });
-    }
-    setShowings([
-      {
-        id: 'show-demo-1',
-        date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-        time: '2:00 PM',
-        buyerName: 'Marcus & Elena Vance',
-        buyerPhone: '(248) 555-0192',
-        buyerEmail: 'vance.family@example.com',
-        hasPreApproval: true,
-        status: 'Confirmed',
-        notes: 'Pre-approved via Rocket Mortgage. Excited about backyard and new kitchen.',
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setInquiries([
-      {
-        id: 'inq-1',
-        name: 'Sarah Jenkins',
-        email: 'sjenkins@example.com',
-        phone: '(586) 555-0144',
-        source: 'Zillow FSBO',
-        dateReceived: new Date().toISOString().split('T')[0],
-        message: 'Hi! Is the home still available? Can we schedule a private tour this Saturday?',
-        replied: false,
-        notes: 'Demo buyer inquiry',
-      },
-    ]);
+    const demo = await import('./lib/demoData');
+    setSettings(demo.DEMO_SETTINGS);
+    setProperty(demo.DEMO_PROPERTY);
+    setPhotos(demo.DEMO_PHOTOS);
+    setComps(demo.DEMO_COMPS);
+    setPriceHistory(demo.DEMO_PRICE_HISTORY);
+    setShowings(demo.DEMO_SHOWINGS);
+    setInquiries(demo.DEMO_INQUIRIES);
+    setDocuments(demo.DEMO_DOCUMENTS);
+    setClosingTeam(demo.DEMO_CLOSING_TEAM);
+    setPromoteGroups(demo.DEMO_PROMOTE_GROUPS);
     setDemoMode(true);
     setActiveTab('my-listing');
     setCurrentView('app');
   };
 
-  // Plan Checkout Initiation
+  // Plan Checkout Initiation (trial NEVER redirects to paid checkout)
   const handleSelectPlan = async (planId: PlanType) => {
     if (!currentUser) {
-      setPendingPlan(planId);
-      localStorage.setItem('fsbo_pending_plan', planId);
+      setPendingPlan(planId === 'trial' ? null : planId);
       setAuthModalMode('signup');
       setAuthModalOpen(true);
       return;
@@ -931,94 +903,119 @@ function AppContent() {
     }
   };
 
-  // Continue checkout/trial activation once guest authenticates
+  // Continue paid checkout once guest explicitly picked a paid plan before authenticating
   useEffect(() => {
     if (currentUser && pendingPlan) {
       const target = pendingPlan;
       setPendingPlan(null);
-      localStorage.removeItem('fsbo_pending_plan');
-      handleSelectPlan(target);
+      if (target !== 'trial') {
+        handleSelectPlan(target);
+      }
     }
   }, [currentUser, pendingPlan]);
+
+  const navigateToDashboard = () => {
+    window.history.pushState({ protected: true }, '', '/');
+    setCurrentView('app');
+    setActiveTab('my-listing');
+  };
 
   // 0. Render Public Buyer Property Landing Page (/listing/:listingId)
   if (currentView === 'listing' && publicListingId) {
     return (
-      <PublicListingView
-        listingId={publicListingId}
-        onGoHome={() => {
-          window.history.pushState({}, '', '/');
-          setCurrentView(currentUser ? 'app' : 'landing');
-        }}
-      />
+      <Suspense fallback={<PageLoader />}>
+        <PublicListingView
+          listingId={publicListingId}
+          onGoHome={() => {
+            window.history.pushState({}, '', '/');
+            setCurrentView(currentUser ? 'app' : 'landing');
+          }}
+          onGoToDashboard={navigateToDashboard}
+          onLogout={handleLogout}
+        />
+      </Suspense>
     );
   }
 
   // 1. Render Hosted Property Website (/p/:slug)
   if (currentView === 'property' && publicPropertySlug) {
     return (
-      <PublicPropertyView
-        slug={publicPropertySlug}
-        onNavigateHome={() => {
-          window.history.pushState({}, '', '/');
-          setCurrentView(currentUser ? 'app' : 'landing');
-        }}
-      />
+      <Suspense fallback={<PageLoader />}>
+        <PublicPropertyView
+          slug={publicPropertySlug}
+          onNavigateHome={() => {
+            window.history.pushState({}, '', '/');
+            setCurrentView(currentUser ? 'app' : 'landing');
+          }}
+          onNavigatePricing={() => {
+            window.history.pushState({}, '', '/pricing');
+            setCurrentView('pricing');
+          }}
+          onGoToDashboard={navigateToDashboard}
+          onLogout={handleLogout}
+        />
+      </Suspense>
     );
   }
 
   // 2. Render Terms Page
   if (currentView === 'terms') {
     return (
-      <>
+      <Suspense fallback={<PageLoader />}>
         <TermsPage
           onBack={() => {
             window.history.pushState({}, '', '/');
             setCurrentView(currentUser ? 'app' : 'landing');
           }}
           onOpenAuth={() => {
+            setPendingPlan(null);
             setAuthModalMode('signup');
             setAuthModalOpen(true);
           }}
+          onGoToDashboard={navigateToDashboard}
+          onLogout={handleLogout}
         />
         <AuthModal
           isOpen={authModalOpen}
-          onClose={() => setAuthModalOpen(false)}
+          onClose={handleCloseAuthModal}
           initialMode={authModalMode}
           onSuccess={handleAuthSuccess}
         />
-      </>
+      </Suspense>
     );
   }
 
   // 3. Render Privacy Page
   if (currentView === 'privacy') {
     return (
-      <>
+      <Suspense fallback={<PageLoader />}>
         <PrivacyPage
           onBack={() => {
             window.history.pushState({}, '', '/');
             setCurrentView(currentUser ? 'app' : 'landing');
           }}
           onOpenAuth={() => {
+            setPendingPlan(null);
             setAuthModalMode('signup');
             setAuthModalOpen(true);
           }}
+          onGoToDashboard={navigateToDashboard}
+          onLogout={handleLogout}
         />
         <AuthModal
           isOpen={authModalOpen}
-          onClose={() => setAuthModalOpen(false)}
+          onClose={handleCloseAuthModal}
           initialMode={authModalMode}
           onSuccess={handleAuthSuccess}
         />
-      </>
+      </Suspense>
     );
   }
 
   // 4. Render Dynamic Pricing Page
   if (currentView === 'pricing') {
     return (
-      <>
+      <Suspense fallback={<PageLoader />}>
         <PricingPage
           saasConfig={saasConfig}
           currentPlan={userProfile?.plan}
@@ -1028,21 +1025,24 @@ function AppContent() {
             setCurrentView(currentUser ? 'app' : 'landing');
           }}
           onLogin={() => {
+            setPendingPlan(null);
             setAuthModalMode('login');
             setAuthModalOpen(true);
           }}
+          onGoToDashboard={navigateToDashboard}
+          onLogout={handleLogout}
         />
         <AuthModal
           isOpen={authModalOpen}
-          onClose={() => setAuthModalOpen(false)}
+          onClose={handleCloseAuthModal}
           initialMode={authModalMode}
           onSuccess={handleAuthSuccess}
         />
-      </>
+      </Suspense>
     );
   }
 
-  // 5. Loading State: While Firebase Auth or Firestore user is initializing, show clean spinner (never flash marketing page)
+  // 5. Loading State: While Firebase Auth or Firestore user is initializing
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 flex flex-col items-center justify-center p-6 text-center font-sans">
@@ -1059,7 +1059,7 @@ function AppContent() {
     );
   }
 
-  // 6. Error State: If loading user information from Firestore failed, show friendly error with Try Again button
+  // 6. Error State: If loading user information from Firestore failed
   if (loadError) {
     return (
       <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 flex flex-col items-center justify-center p-6 text-center font-sans">
@@ -1100,11 +1100,15 @@ function AppContent() {
           onDismissLoggedOut={() => setLoggedOutMessage(null)}
           onStartFree={() => {
             setLoggedOutMessage(null);
+            setPendingPlan(null);
+            window.history.pushState({}, '', '/signup');
             setAuthModalMode('signup');
             setAuthModalOpen(true);
           }}
           onLogin={() => {
             setLoggedOutMessage(null);
+            setPendingPlan(null);
+            window.history.pushState({}, '', '/login');
             setAuthModalMode('login');
             setAuthModalOpen(true);
           }}
@@ -1121,11 +1125,13 @@ function AppContent() {
             setCurrentView('privacy');
           }}
           onDemoPreview={handleStartDemoPreview}
+          onGoToDashboard={navigateToDashboard}
+          onLogout={handleLogout}
         />
 
         <AuthModal
           isOpen={authModalOpen}
-          onClose={() => setAuthModalOpen(false)}
+          onClose={handleCloseAuthModal}
           initialMode={authModalMode}
           onSuccess={handleAuthSuccess}
         />
@@ -1142,7 +1148,7 @@ function AppContent() {
   const profileEmail = userProfile?.email || currentUser?.email || '';
   const profileInitial = (profileDisplayName.trim().charAt(0) || 'S').toUpperCase();
 
-  // 6. Authenticated FSBO Compass Workspace
+  // 8. Authenticated FSBO Compass Workspace
   return (
     <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100 flex flex-col lg:flex-row antialiased selection:bg-[#FF6B5A] selection:text-white font-sans">
       {/* Sidebar Navigation */}
@@ -1279,7 +1285,7 @@ function AppContent() {
         </header>
 
         {/* Local Data Migration Banner */}
-        {hasLocalDataToImport && currentUser && (
+        {hasLocalDataToImport && currentUser && !demoMode && (
           <div className="bg-sky-50 dark:bg-sky-950/40 border-b border-sky-200 dark:border-sky-800 p-3.5 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-xs text-sky-900 dark:text-sky-200">
             <div className="flex items-center gap-2.5">
               <CloudUpload className="w-5 h-5 text-sky-600 shrink-0" />
@@ -1305,304 +1311,331 @@ function AppContent() {
           </div>
         )}
 
-        {activeTab === 'my-listing' ? (
-          <SectionMyListing
-            property={property}
-            photos={photos}
-            openHouses={openHouses}
-            inquiriesCount={inquiries.length}
-            isSellerView={true}
-            isTrial={userProfile?.plan === 'trial'}
-            onEditListing={() => setShowWizard(true)}
-            onNavigate={handleSelectAuthenticatedTab}
-            onAddInquiry={(inq) => setInquiries((prev) => [inq, ...prev])}
-            onOpenPricing={() => {
-              window.history.pushState({}, '', '/pricing');
-              setCurrentView('pricing');
-            }}
-            onAddPhotos={() => handleSelectAuthenticatedTab('photos')}
-          />
-        ) : (
-        <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-          {activeTab === 'dashboard' && (
-            <SectionDashboard
+        <Suspense fallback={<PageLoader />}>
+          {activeTab === 'my-listing' ? (
+            <SectionMyListing
               property={property}
               photos={photos}
-              sites={sites}
-              showings={showings}
               openHouses={openHouses}
-              inquiries={inquiries}
-              readyScore={readyScore}
-              lastRefreshDate={lastRefreshDate}
+              inquiriesCount={inquiries.length}
+              isSellerView={true}
+              isTrial={userProfile?.plan === 'trial'}
+              onEditListing={() => setShowWizard(true)}
               onNavigate={handleSelectAuthenticatedTab}
-            />
-          )}
-
-          {activeTab === 'profile' && (
-            <SectionProfile
-              property={property}
-              onChange={handleUpdateProperty}
-              onNavigate={handleSelectAuthenticatedTab}
-            />
-          )}
-
-          {activeTab === 'ai-finder' && (
-            <SectionAiFinder
-              property={property}
-              photos={photos}
-              onUpdateProperty={handleUpdateProperty}
-              onNavigate={handleSelectAuthenticatedTab}
-            />
-          )}
-
-          {activeTab === 'photos' && (
-            <SectionPhotos
-              property={property}
-              photos={photos}
-              onUpdatePhotos={handleUpdatePhotos}
-              onUpdateProperty={handleUpdateProperty}
-              onNavigate={handleSelectAuthenticatedTab}
-            />
-          )}
-
-          {activeTab === 'pricing' && (
-            <SectionPricing
-              property={property}
-              comps={comps}
-              priceHistory={priceHistory}
-              settings={settings}
-              onUpdateComps={setComps}
-              onUpdatePriceHistory={setPriceHistory}
-              onUpdateProperty={handleUpdateProperty}
-              onNavigate={handleSelectAuthenticatedTab}
-            />
-          )}
-
-          {activeTab === 'listing' && (
-            <SectionListing
-              property={property}
-              listingCopy={listingCopy}
-              onUpdateListingCopy={setListingCopy}
-              onNavigate={setActiveTab}
-            />
-          )}
-
-          {activeTab === 'sites' && (
-            <SectionSites
-              sites={sites}
-              listingCopy={listingCopy}
-              property={property}
-              onUpdateSites={setSites}
-              onNavigate={setActiveTab}
-            />
-          )}
-
-          {activeTab === 'website' && (
-            <SectionWebsite
-              property={property}
-              photos={photos}
-              settings={settings}
-              openHouses={openHouses}
-              documents={documents}
-              onNavigate={setActiveTab}
+              onAddInquiry={(inq) => setInquiries((prev) => [inq, ...prev])}
               onOpenPricing={() => {
                 window.history.pushState({}, '', '/pricing');
                 setCurrentView('pricing');
               }}
+              onAddPhotos={() => handleSelectAuthenticatedTab('photos')}
             />
-          )}
+          ) : (
+            <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+              {activeTab === 'dashboard' && (
+                <SectionDashboard
+                  property={property}
+                  photos={photos}
+                  sites={sites}
+                  showings={showings}
+                  openHouses={openHouses}
+                  inquiries={inquiries}
+                  readyScore={readyScore}
+                  lastRefreshDate={lastRefreshDate}
+                  onNavigate={handleSelectAuthenticatedTab}
+                />
+              )}
 
-          {activeTab === 'showings' && (
-            <SectionShowings
-              property={property}
-              showings={showings}
-              openHouses={openHouses}
-              visitorLog={visitorLog}
-              settings={settings}
-              onUpdateShowings={setShowings}
-              onUpdateOpenHouses={(nextOpenHouses) => {
-                setOpenHouses(nextOpenHouses);
-                if (currentUser) {
-                  syncPublicListing(property, photos, nextOpenHouses);
-                }
-              }}
-              onUpdateVisitorLog={setVisitorLog}
-              onUpdateSettings={setSettings}
-              onNavigate={setActiveTab}
-            />
-          )}
+              {activeTab === 'profile' && (
+                <SectionProfile
+                  property={property}
+                  onChange={handleUpdateProperty}
+                  onNavigate={handleSelectAuthenticatedTab}
+                />
+              )}
 
-          {activeTab === 'inbox' && (
-            <SectionInbox
-              inquiries={inquiries}
-              property={property}
-              settings={settings}
-              onUpdateInquiries={setInquiries}
-              onNavigate={setActiveTab}
-            />
-          )}
+              {activeTab === 'ai-finder' && (
+                <SectionAiFinder
+                  property={property}
+                  photos={photos}
+                  onUpdateProperty={handleUpdateProperty}
+                  onNavigate={handleSelectAuthenticatedTab}
+                  onOpenPricing={() => {
+                    window.history.pushState({}, '', '/pricing');
+                    setCurrentView('pricing');
+                  }}
+                />
+              )}
 
-          {activeTab === 'promote' && (
-            <SectionPromote
-              property={property}
-              settings={settings}
-              groups={promoteGroups}
-              openHouses={openHouses}
-              onUpdateGroups={setPromoteGroups}
-              onNavigate={setActiveTab}
-            />
-          )}
+              {activeTab === 'photos' && (
+                <SectionPhotos
+                  property={property}
+                  photos={photos}
+                  onUpdatePhotos={handleUpdatePhotos}
+                  onUpdateProperty={handleUpdateProperty}
+                  onNavigate={handleSelectAuthenticatedTab}
+                  onOpenPricing={() => {
+                    window.history.pushState({}, '', '/pricing');
+                    setCurrentView('pricing');
+                  }}
+                />
+              )}
 
-          {activeTab === 'refresh' && (
-            <SectionRefresh
-              property={property}
-              settings={settings}
-              sites={sites}
-              priceHistory={priceHistory}
-              lastRefreshDate={lastRefreshDate}
-              onUpdateProperty={handleUpdateProperty}
-              onUpdateSettings={setSettings}
-              onUpdatePriceHistory={setPriceHistory}
-              onPerformRefresh={handlePerformRefresh}
-              onNavigate={setActiveTab}
-            />
-          )}
+              {activeTab === 'pricing' && (
+                <SectionPricing
+                  property={property}
+                  comps={comps}
+                  priceHistory={priceHistory}
+                  settings={settings}
+                  onUpdateComps={setComps}
+                  onUpdatePriceHistory={setPriceHistory}
+                  onUpdateProperty={handleUpdateProperty}
+                  onNavigate={handleSelectAuthenticatedTab}
+                />
+              )}
 
-          {activeTab === 'closing' && (
-            <SectionClosing
-              property={property}
-              settings={settings}
-              documents={documents}
-              offers={offers}
-              closingTeam={closingTeam}
-              onUpdateDocuments={setDocuments}
-              onUpdateOffers={setOffers}
-              onUpdateClosingTeam={setClosingTeam}
-              onNavigate={setActiveTab}
-            />
-          )}
+              {activeTab === 'listing' && (
+                <SectionListing
+                  property={property}
+                  listingCopy={listingCopy}
+                  onUpdateListingCopy={setListingCopy}
+                  onNavigate={setActiveTab}
+                  onOpenPricing={() => {
+                    window.history.pushState({}, '', '/pricing');
+                    setCurrentView('pricing');
+                  }}
+                />
+              )}
 
-          {activeTab === 'account' && (
-            <SectionAccount
-              onOpenPricing={() => {
-                window.history.pushState({}, '', '/pricing');
-                setCurrentView('pricing');
-              }}
-              onOpenCompare={() => {
-                window.history.pushState({}, '', '/pricing#compare');
-                setCurrentView('pricing');
-              }}
-            />
-          )}
+              {activeTab === 'sites' && (
+                <SectionSites
+                  sites={sites}
+                  listingCopy={listingCopy}
+                  property={property}
+                  onUpdateSites={setSites}
+                  onNavigate={setActiveTab}
+                  onOpenPricing={() => {
+                    window.history.pushState({}, '', '/pricing');
+                    setCurrentView('pricing');
+                  }}
+                />
+              )}
 
-          {activeTab === 'help' && (
-            <SectionHelp
-              onNavigate={setActiveTab}
-              onViewTerms={() => {
-                window.history.pushState({}, '', '/terms');
-                setCurrentView('terms');
-              }}
-              onViewPrivacy={() => {
-                window.history.pushState({}, '', '/privacy');
-                setCurrentView('privacy');
-              }}
-            />
-          )}
+              {activeTab === 'website' && (
+                <SectionWebsite
+                  property={property}
+                  photos={photos}
+                  settings={settings}
+                  openHouses={openHouses}
+                  documents={documents}
+                  onNavigate={setActiveTab}
+                  onOpenPricing={() => {
+                    window.history.pushState({}, '', '/pricing');
+                    setCurrentView('pricing');
+                  }}
+                />
+              )}
 
-          {activeTab === 'admin' && <AdminPanel />}
+              {activeTab === 'showings' && (
+                <SectionShowings
+                  property={property}
+                  showings={showings}
+                  openHouses={openHouses}
+                  visitorLog={visitorLog}
+                  settings={settings}
+                  onUpdateShowings={setShowings}
+                  onUpdateOpenHouses={(nextOpenHouses) => {
+                    setOpenHouses(nextOpenHouses);
+                    if (currentUser) {
+                      syncPublicListing(property, photos, nextOpenHouses);
+                    }
+                  }}
+                  onUpdateVisitorLog={setVisitorLog}
+                  onUpdateSettings={setSettings}
+                  onNavigate={setActiveTab}
+                />
+              )}
 
-          {activeTab === 'settings' && (
-            <SectionSettings
-              settings={settings}
-              property={property}
-              photos={photos}
-              allAppData={{
-                settings,
-                property,
-                comps,
-                priceHistory,
-                listingCopy,
-                sites,
-                showings,
-                openHouses,
-                visitorLog,
-                inquiries,
-                documents,
-                offers,
-                closingTeam,
-                promoteGroups,
-                lastRefreshDate,
-              }}
-              onUpdateSettings={setSettings}
-              onUpdateProperty={handleUpdateProperty}
-              onRestoreAllData={handleRestoreAllData}
-              onRelaunchWizard={() => setShowWizard(true)}
-              onResetDefaults={handleResetDefaults}
-              onNavigate={setActiveTab}
-            />
+              {activeTab === 'inbox' && (
+                <SectionInbox
+                  inquiries={inquiries}
+                  property={property}
+                  settings={settings}
+                  onUpdateInquiries={setInquiries}
+                  onNavigate={setActiveTab}
+                  onOpenPricing={() => {
+                    window.history.pushState({}, '', '/pricing');
+                    setCurrentView('pricing');
+                  }}
+                />
+              )}
+
+              {activeTab === 'promote' && (
+                <SectionPromote
+                  property={property}
+                  settings={settings}
+                  groups={promoteGroups}
+                  openHouses={openHouses}
+                  onUpdateGroups={setPromoteGroups}
+                  onNavigate={setActiveTab}
+                />
+              )}
+
+              {activeTab === 'refresh' && (
+                <SectionRefresh
+                  property={property}
+                  settings={settings}
+                  sites={sites}
+                  priceHistory={priceHistory}
+                  lastRefreshDate={lastRefreshDate}
+                  onUpdateProperty={handleUpdateProperty}
+                  onUpdateSettings={setSettings}
+                  onUpdatePriceHistory={setPriceHistory}
+                  onPerformRefresh={handlePerformRefresh}
+                  onNavigate={setActiveTab}
+                />
+              )}
+
+              {activeTab === 'closing' && (
+                <SectionClosing
+                  property={property}
+                  settings={settings}
+                  documents={documents}
+                  offers={offers}
+                  closingTeam={closingTeam}
+                  onUpdateDocuments={setDocuments}
+                  onUpdateOffers={setOffers}
+                  onUpdateClosingTeam={setClosingTeam}
+                  onNavigate={setActiveTab}
+                />
+              )}
+
+              {activeTab === 'account' && (
+                <SectionAccount
+                  onOpenPricing={() => {
+                    window.history.pushState({}, '', '/pricing');
+                    setCurrentView('pricing');
+                  }}
+                  onOpenCompare={() => {
+                    window.history.pushState({}, '', '/pricing#compare');
+                    setCurrentView('pricing');
+                  }}
+                />
+              )}
+
+              {activeTab === 'help' && (
+                <SectionHelp
+                  onNavigate={setActiveTab}
+                  onViewTerms={() => {
+                    window.history.pushState({}, '', '/terms');
+                    setCurrentView('terms');
+                  }}
+                  onViewPrivacy={() => {
+                    window.history.pushState({}, '', '/privacy');
+                    setCurrentView('privacy');
+                  }}
+                />
+              )}
+
+              {activeTab === 'admin' && <AdminPanel />}
+
+              {activeTab === 'settings' && (
+                <SectionSettings
+                  settings={settings}
+                  property={property}
+                  photos={photos}
+                  allAppData={{
+                    settings,
+                    property,
+                    comps,
+                    priceHistory,
+                    listingCopy,
+                    sites,
+                    showings,
+                    openHouses,
+                    visitorLog,
+                    inquiries,
+                    documents,
+                    offers,
+                    closingTeam,
+                    promoteGroups,
+                    lastRefreshDate,
+                  }}
+                  onUpdateSettings={setSettings}
+                  onUpdateProperty={handleUpdateProperty}
+                  onRestoreAllData={handleRestoreAllData}
+                  onRelaunchWizard={() => setShowWizard(true)}
+                  onResetDefaults={handleResetDefaults}
+                  onNavigate={setActiveTab}
+                />
+              )}
+            </div>
           )}
-        </div>
-        )}
+        </Suspense>
       </main>
 
       {/* Onboarding / Edit Listing Wizard Modal */}
       {showWizard && (
-        <OnboardingWizard
-          property={property}
-          photos={photos}
-          isEditing={hasFilledInfo}
-          onComplete={async (updatedProp, updatedPhotos) => {
-            // Upload photos to Firebase Storage if signed in
-            let uploadedPhotos = updatedPhotos;
-            if (currentUser) {
-              uploadedPhotos = await Promise.all(
-                updatedPhotos.map(async (p) => {
-                  if (p.dataUrl && !p.dataUrl.startsWith('http')) {
-                    const url = await uploadListingPhoto(currentUser.uid, p.id, p.dataUrl);
-                    return { ...p, dataUrl: url };
-                  }
-                  return p;
-                })
-              );
-            }
+        <Suspense fallback={null}>
+          <OnboardingWizard
+            property={property}
+            photos={photos}
+            isEditing={hasFilledInfo}
+            onComplete={async (updatedProp, updatedPhotos) => {
+              let uploadedPhotos = updatedPhotos;
+              if (currentUser && !demoMode) {
+                uploadedPhotos = await Promise.all(
+                  updatedPhotos.map(async (p) => {
+                    if (p.dataUrl && !p.dataUrl.startsWith('http')) {
+                      const url = await uploadListingPhoto(currentUser.uid, p.id, p.dataUrl);
+                      return { ...p, dataUrl: url };
+                    }
+                    return p;
+                  })
+                );
+              }
 
-            const listingId = updatedProp.id || activeProperty?.id || currentUser?.uid || 'my-home';
-            const finalProp: PropertyProfile = {
-              ...updatedProp,
-              id: listingId,
-              published: updatedProp.published ?? true,
-              setupComplete: true,
-              photos: uploadedPhotos,
-            };
+              const listingId = updatedProp.id || activeProperty?.id || currentUser?.uid || 'my-home';
+              const finalProp: PropertyProfile = {
+                ...updatedProp,
+                id: listingId,
+                published: updatedProp.published ?? true,
+                setupComplete: true,
+                photos: uploadedPhotos,
+              };
 
-            setPhotos(uploadedPhotos);
-            setProperty(finalProp);
-            setShowWizard(false);
-            setSkippedWizard(false);
+              setPhotos(uploadedPhotos);
+              setProperty(finalProp);
+              setShowWizard(false);
+              setSkippedWizard(false);
 
-            if (currentUser) {
-              await updateCurrentProperty(finalProp);
-              await syncPublicListing(finalProp, uploadedPhotos, openHouses);
-              await markOnboardingComplete();
-            }
+              if (currentUser && !demoMode) {
+                await updateCurrentProperty(finalProp);
+                await syncPublicListing(finalProp, uploadedPhotos, openHouses);
+                await markOnboardingComplete();
+              }
 
-            handleSelectAuthenticatedTab('my-listing');
-            setCurrentView('app');
-          }}
-          onClose={() => {
-            setShowWizard(false);
-            setSkippedWizard(true);
-          }}
-        />
+              handleSelectAuthenticatedTab('my-listing');
+              setCurrentView('app');
+            }}
+            onClose={() => {
+              setShowWizard(false);
+              setSkippedWizard(true);
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Support / Help Modal */}
-      <HelpModal isOpen={helpModalOpen} onClose={() => setHelpModalOpen(false)} />
+      {helpModalOpen && (
+        <Suspense fallback={null}>
+          <HelpModal isOpen={helpModalOpen} onClose={() => setHelpModalOpen(false)} />
+        </Suspense>
+      )}
 
       {/* Auth Modal */}
       <AuthModal
         isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        onClose={handleCloseAuthModal}
         initialMode={authModalMode}
         onSuccess={handleAuthSuccess}
       />

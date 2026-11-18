@@ -5,10 +5,17 @@ import { useAuth } from '../../contexts/AuthContext';
 interface TermsPageProps {
   onBack: () => void;
   onOpenAuth?: () => void;
+  onGoToDashboard?: () => void;
+  onLogout?: () => void;
 }
 
-export const TermsPage: React.FC<TermsPageProps> = ({ onBack, onOpenAuth }) => {
-  const { saasConfig } = useAuth();
+export const TermsPage: React.FC<TermsPageProps> = ({
+  onBack,
+  onOpenAuth,
+  onGoToDashboard,
+  onLogout,
+}) => {
+  const { saasConfig, currentUser, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-[#F8F6F2] text-[#0F2A44] flex flex-col font-sans">
@@ -20,20 +27,39 @@ export const TermsPage: React.FC<TermsPageProps> = ({ onBack, onOpenAuth }) => {
             className="inline-flex items-center gap-2 text-sm font-semibold text-[#0F2A44] hover:text-[#FF6B5A] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            Back to Home
+            {currentUser ? 'Back to Dashboard' : 'Back to Home'}
           </button>
           <div className="flex items-center gap-2">
             <span className="font-heading font-bold text-lg text-[#0F2A44]">
               {saasConfig.brandName}
             </span>
           </div>
-          {onOpenAuth && (
-            <button
-              onClick={onOpenAuth}
-              className="px-4 py-2 text-sm font-semibold text-white bg-[#FF6B5A] hover:bg-[#e85a4a] rounded-xl shadow-sm transition-all"
-            >
-              Start Free
-            </button>
+          {currentUser ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onGoToDashboard || onBack}
+                className="px-3.5 py-2 text-xs sm:text-sm font-semibold text-white bg-[#0F2A44] hover:bg-[#1A3D60] rounded-xl shadow-sm transition-all"
+              >
+                Dashboard
+              </button>
+              <button
+                type="button"
+                onClick={() => (onLogout ? onLogout() : logout())}
+                className="px-3 py-2 text-xs sm:text-sm font-semibold text-stone-700 hover:text-red-600 border border-stone-300 rounded-xl transition-all"
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            onOpenAuth && (
+              <button
+                onClick={onOpenAuth}
+                className="px-4 py-2 text-sm font-semibold text-white bg-[#FF6B5A] hover:bg-[#e85a4a] rounded-xl shadow-sm transition-all"
+              >
+                Start Free
+              </button>
+            )
           )}
         </div>
       </header>

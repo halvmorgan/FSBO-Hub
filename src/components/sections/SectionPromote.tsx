@@ -351,7 +351,7 @@ export const SectionPromote: React.FC<SectionPromoteProps> = ({
                   required
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
-                  placeholder="e.g. Rochester Hills Buy & Sell"
+                  placeholder="e.g. Local Neighborhood Buy & Sell"
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none"
                 />
               </div>

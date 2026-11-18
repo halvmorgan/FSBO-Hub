@@ -151,7 +151,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         setFormData({ ...formData, address: newAddr });
                       }
                     }}
-                    placeholder="e.g. 4288 Meadowview Drive"
+                    placeholder="e.g. 123 Main Street"
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
                   />
                 </div>
@@ -165,7 +165,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                       type="text"
                       value={formData.city}
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                      placeholder="Rochester Hills"
+                      placeholder="City"
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
                     />
                   </div>

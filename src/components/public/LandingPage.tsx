@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { SaasConfig } from '../../types/saas';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface LandingPageProps {
   saasConfig: SaasConfig;
@@ -27,6 +28,8 @@ interface LandingPageProps {
   onViewTerms: () => void;
   onViewPrivacy: () => void;
   onDemoPreview: () => void;
+  onGoToDashboard?: () => void;
+  onLogout?: () => void;
   loggedOutMessage?: string | null;
   onDismissLoggedOut?: () => void;
 }
@@ -39,9 +42,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onViewTerms,
   onViewPrivacy,
   onDemoPreview,
+  onGoToDashboard,
+  onLogout,
   loggedOutMessage,
   onDismissLoggedOut,
 }) => {
+  const { currentUser, logout } = useAuth();
   const faqs = [
     {
       q: 'How much money can I actually save selling For Sale By Owner (FSBO)?',
@@ -99,21 +105,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             >
               Demo Preview
             </button>
-            <button
-              type="button"
-              onClick={onLogin}
-              className="text-xs font-semibold text-slate-200 hover:text-white transition-colors"
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={onStartFree}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-md shadow-[#FF6B5A]/25"
-            >
-              <span>Start Free</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            {currentUser ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => (onLogout ? onLogout() : logout())}
+                  className="text-xs font-semibold text-slate-200 hover:text-white transition-colors"
+                >
+                  Sign Out
+                </button>
+                <button
+                  type="button"
+                  onClick={onGoToDashboard || onStartFree}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-md shadow-[#FF6B5A]/25"
+                >
+                  <span>Dashboard</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onLogin}
+                  className="text-xs font-semibold text-slate-200 hover:text-white transition-colors"
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={onStartFree}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-md shadow-[#FF6B5A]/25"
+                >
+                  <span>Start Free</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -163,10 +191,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-4">
             <button
               type="button"
-              onClick={onStartFree}
+              onClick={currentUser && onGoToDashboard ? onGoToDashboard : onStartFree}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-heading font-bold text-sm text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-xl shadow-[#FF6B5A]/30 transform hover:-translate-y-0.5"
             >
-              <span>Start Free 7-Day Trial</span>
+              <span>{currentUser ? 'Go to Dashboard' : 'Start Free 7-Day Trial'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
             <button
@@ -372,10 +400,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </p>
           <button
             type="button"
-            onClick={onStartFree}
+            onClick={currentUser && onGoToDashboard ? onGoToDashboard : onStartFree}
             className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl font-bold text-sm text-white bg-[#FF6B5A] hover:bg-[#fa5644] transition-all shadow-lg shadow-[#FF6B5A]/25"
           >
-            <span>Start Free Trial Now</span>
+            <span>{currentUser ? 'Go to Dashboard' : 'Start Free Trial Now'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
           <div>

@@ -96,8 +96,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const planType = userProfile?.plan || 'trial';
   const planConfig = saasConfig.plans[planType] || saasConfig.plans.trial;
   const creditsUsed = userProfile?.aiCreditsUsed || 0;
-  const creditsMax = planConfig.aiCreditsMonthly;
-  const creditsPercent = Math.min(100, Math.round((creditsUsed / creditsMax) * 100));
+  const creditsMax = planType === 'trial' ? 3 : planConfig.aiCreditsMonthly;
+  const creditsPercent = Math.min(100, Math.round((creditsUsed / Math.max(1, creditsMax)) * 100));
 
   type SectionId = 'my-listing-section' | 'price-market-section' | 'buyers-showings-section' | 'closing-account-section';
 
@@ -331,14 +331,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     try {
       await createProperty({
         address: newPropAddress.trim(),
-        city: 'Ann Arbor',
-        state: 'Michigan',
-        zip: '48103',
-        price: 350000,
-        beds: 3,
-        bathsFull: 2,
-        bathsHalf: 0,
-        sqft: 1800,
       });
       setNewPropAddress('');
       setIsAddingProp(false);
@@ -488,7 +480,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Zap className="w-3 h-3 text-[#F2B544]" /> AI Credits
               </span>
               <span className="font-mono text-white">
-                {creditsUsed}/{creditsMax}
+                {planType === 'trial'
+                  ? `${creditsUsed} of 3 used`
+                  : `${creditsUsed}/${creditsMax}`}
               </span>
             </div>
             <div className="w-full bg-[#0C2238] rounded-full h-1.5 overflow-hidden">

@@ -704,12 +704,12 @@ export const SectionClosing: React.FC<SectionClosingProps> = ({
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">Phone & Email</label>
+            <label className="block text-xs font-bold text-slate-600 mb-1">Phone</label>
             <input
               type="text"
-              value={`${closingTeam.phone} • ${closingTeam.email}`}
+              value={closingTeam.phone}
               onChange={(e) => onUpdateClosingTeam({ ...closingTeam, phone: e.target.value })}
-              placeholder="(555) 555-0199 • title@escrow.com"
+              placeholder="(555) 123-4567"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none"
             />
           </div>

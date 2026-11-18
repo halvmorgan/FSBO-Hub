@@ -17,12 +17,19 @@ import {
 } from 'lucide-react';
 import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
 import { AiWaitNotice } from '../common/AiWaitNotice';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  postAiJson,
+  AiCreditLimitError,
+  normalizeFriendlyAiError,
+} from '../../lib/aiClient';
 
 interface SectionAiFinderProps {
   property: PropertyProfile;
   photos: PhotoItem[];
   onUpdateProperty: (updated: PropertyProfile) => void;
   onNavigate: (tab: ActiveTab) => void;
+  onOpenPricing?: () => void;
 }
 
 interface PhotoDetectedFeature {
@@ -39,6 +46,7 @@ interface PublicPropertyFact {
   label: string;
   userValue: any;
   publicValue: any;
+  hasPublic: boolean;
   isDifferent: boolean;
 }
 
@@ -51,12 +59,143 @@ interface MissingFeatureQuestion {
   answered?: 'yes' | 'no';
 }
 
+function isBlankOrMissingPublicVal(val: any): boolean {
+  if (val === null || val === undefined) return true;
+  const str = String(val).trim();
+  if (!str) return true;
+  const lower = str.toLowerCase();
+  return (
+    lower === 'not found' ||
+    lower === 'none' ||
+    lower === 'unknown' ||
+    lower === 'n/a' ||
+    lower === 'na' ||
+    lower === 'not available' ||
+    lower === '—' ||
+    lower === '-'
+  );
+}
+
+function parseNumericVal(val: any): number | null {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? val : null;
+  }
+  if (typeof val !== 'string') return null;
+  const cleaned = val.replace(/[$,]/g, '').replace(/,/g, '');
+  const match = cleaned.match(/-?\d+(\.\d+)?/);
+  if (!match) return null;
+  const num = parseFloat(match[0]);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseLotAcres(val: any): number | null {
+  if (val === null || val === undefined) return null;
+  const str = String(val).trim().toLowerCase();
+  if (!str) return null;
+  const num = parseNumericVal(str);
+  if (num === null) return null;
+  if (str.includes('sq') || str.includes('sf') || num > 100) {
+    // Likely square feet -> convert to acres
+    return num / 43560;
+  }
+  return num;
+}
+
+function normalizeSchoolText(val: any): string {
+  return String(val || '')
+    .toLowerCase()
+    .replace(/\b(public|community|area|unified|consolidated|independent|city|township)?\s*schools?\b/g, '')
+    .replace(/\bschool\s*district\b/g, '')
+    .replace(/\bdistrict\b/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function comparePublicField(
+  key: string,
+  userVal: any,
+  publicVal: any
+): { hasPublic: boolean; isDifferent: boolean } {
+  if (isBlankOrMissingPublicVal(publicVal)) {
+    return { hasPublic: false, isDifferent: false };
+  }
+
+  const userEmpty =
+    userVal === null ||
+    userVal === undefined ||
+    String(userVal).trim() === '' ||
+    (typeof userVal === 'number' && userVal === 0);
+
+  if (userEmpty) {
+    return { hasPublic: true, isDifferent: true };
+  }
+
+  if (key === 'beds' || key === 'bathsFull' || key === 'yearBuilt') {
+    const u = parseNumericVal(userVal);
+    const p = parseNumericVal(publicVal);
+    if (u !== null && p !== null) {
+      return { hasPublic: true, isDifferent: Math.abs(u - p) >= 0.01 };
+    }
+  }
+
+  if (key === 'sqft') {
+    const u = parseNumericVal(userVal);
+    const p = parseNumericVal(publicVal);
+    if (u !== null && p !== null) {
+      const tol = Math.max(25, u * 0.02);
+      return { hasPublic: true, isDifferent: Math.abs(u - p) > tol };
+    }
+  }
+
+  if (key === 'taxes') {
+    const u = parseNumericVal(userVal);
+    const p = parseNumericVal(publicVal);
+    if (u !== null && p !== null) {
+      const tol = Math.max(75, u * 0.03);
+      return { hasPublic: true, isDifferent: Math.abs(u - p) > tol };
+    }
+  }
+
+  if (key === 'lotSize') {
+    const uAcres = parseLotAcres(userVal);
+    const pAcres = parseLotAcres(publicVal);
+    if (uAcres !== null && pAcres !== null) {
+      return { hasPublic: true, isDifferent: Math.abs(uAcres - pAcres) > 0.03 };
+    }
+  }
+
+  if (key === 'schoolDistrict') {
+    const uNorm = normalizeSchoolText(userVal);
+    const pNorm = normalizeSchoolText(publicVal);
+    if (uNorm && pNorm) {
+      const matches = uNorm === pNorm || uNorm.includes(pNorm) || pNorm.includes(uNorm);
+      return { hasPublic: true, isDifferent: !matches };
+    }
+  }
+
+  const uStr = String(userVal).trim().toLowerCase().replace(/\s+/g, ' ');
+  const pStr = String(publicVal).trim().toLowerCase().replace(/\s+/g, ' ');
+  return { hasPublic: true, isDifferent: uStr !== pStr };
+}
+
 export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
   property,
   photos,
   onUpdateProperty,
   onNavigate,
+  onOpenPricing,
 }) => {
+  const { userProfile, saasConfig, syncAiCredits } = useAuth();
+  const planType = userProfile?.plan || 'trial';
+  const creditsUsed = userProfile?.aiCreditsUsed || 0;
+  const maxCredits =
+    planType === 'trial'
+      ? 3
+      : saasConfig.plans[planType]?.aiCreditsMonthly || 300;
+
+  const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
+
   // 1. Photo Scanner State
   const [isScanningPhotos, setIsScanningPhotos] = useState(false);
   const [photoFeatures, setPhotoFeatures] = useState<PhotoDetectedFeature[]>([]);
@@ -76,17 +215,17 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
   // 15s wait / 90s timeout handlers
   const { waitMessage: photoWaitMsg } = useAiWaitTimer(isScanningPhotos, () => {
     setIsScanningPhotos(false);
-    setPhotoScanError('AI is busy, please try again');
+    setPhotoScanError('Something went wrong — please try again');
   });
 
   const { waitMessage: publicWaitMsg } = useAiWaitTimer(isCheckingPublic, () => {
     setIsCheckingPublic(false);
-    setPublicError('AI is busy, please try again');
+    setPublicError('Something went wrong — please try again');
   });
 
   const { waitMessage: gapWaitMsg } = useAiWaitTimer(isCheckingGaps, () => {
     setIsCheckingGaps(false);
-    setGapError('AI is busy, please try again');
+    setGapError('Something went wrong — please try again');
   });
 
   // Action 1: Scan Photos
@@ -97,19 +236,20 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
     }
     setIsScanningPhotos(true);
     setPhotoScanError(null);
+    setUpgradePrompt(null);
 
     const detectedList: PhotoDetectedFeature[] = [...photoFeatures];
     const photosToScan = photos.slice(0, 4);
     let successCount = 0;
     let failedCount = 0;
-    let lastErrorDetail = '';
+    let localUsed = creditsUsed;
 
     for (let i = 0; i < photosToScan.length; i++) {
       const p = photosToScan[i];
 
-      // Pause 2 seconds between photos (not all at once) to protect RPM quota
+      // Pause 1.5 seconds between photos to protect RPM quota
       if (i > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
 
       try {
@@ -129,37 +269,26 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           }
         }
 
-        const res = await fetch('/api/gemini/photo-features', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const data = await postAiJson<any>(
+          '/api/gemini/photo-features',
+          {
             imageBase64: base64ToSend,
             roomHint: p.caption || p.roomCategory,
-          }),
-        });
+          },
+          {
+            currentPlan: planType,
+            creditsUsed: localUsed,
+            maxCredits,
+            onCreditsSynced: (nextUsed) => {
+              localUsed = nextUsed;
+              syncAiCredits(nextUsed);
+            },
+          }
+        );
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          console.error('[Gemini Server Diagnostic for Photo Scan]:', {
-            photoId: p.id,
-            status: res.status,
-            rawGeminiError: errData.rawGeminiError || errData.message,
-            geminiStatus: errData.geminiStatus,
-            modelTried: errData.modelTried,
-            isAiBusy: errData.isAiBusy,
-            isAiKeyMissing: errData.isAiKeyMissing,
-          });
-          failedCount++;
-          lastErrorDetail = errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`);
-          continue; // Keep prior successes, do not wipe progress
-        }
-
-        const data = await res.json();
-        console.log(`[Gemini Server Diagnostic] Photo ${i + 1}/${photosToScan.length} scanned successfully. Model answered: ${data.modelUsed || 'gemini-3.8-flash'}`);
         successCount++;
         if (data.features && Array.isArray(data.features)) {
           data.features.forEach((feat: any) => {
-            // avoid duplicates
             if (!detectedList.some((d) => d.name.toLowerCase() === feat.name.toLowerCase())) {
               detectedList.push({
                 photoId: p.id,
@@ -171,21 +300,23 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
               });
             }
           });
-          // Update photoFeatures state immediately so user sees good results in real time!
           setPhotoFeatures([...detectedList]);
         }
       } catch (err: any) {
-        console.error('[Photo Scan Network Error]:', err);
+        if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
+          setUpgradePrompt(err.message);
+          break;
+        }
+        console.error('[Photo Scan Error]:', err);
         failedCount++;
-        lastErrorDetail = err.message || 'Network error';
       }
     }
 
     if (failedCount > 0) {
       if (successCount > 0) {
-        setPhotoScanError(`Scanned ${successCount} of ${photosToScan.length} photos, try again for the rest.`);
+        setPhotoScanError(`Scanned ${successCount} of ${photosToScan.length} photos — try again for the rest.`);
       } else {
-        setPhotoScanError('AI is busy, please try again in a few minutes');
+        setPhotoScanError('Something went wrong — please try again');
       }
     } else {
       setPhotoScanError(null);
@@ -219,39 +350,32 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
     }
     setIsCheckingPublic(true);
     setPublicError(null);
+    setUpgradePrompt(null);
 
     try {
-      const res = await fetch('/api/gemini/public-info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          address: `${property.address}, ${property.city}`,
+      const data = await postAiJson<any>(
+        '/api/gemini/public-info',
+        {
+          address: `${property.address}${property.city ? `, ${property.city}` : ''}`,
           state: property.state || 'Michigan',
-        }),
-      });
+        },
+        {
+          currentPlan: planType,
+          creditsUsed,
+          maxCredits,
+          onCreditsSynced: syncAiCredits,
+        }
+      );
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        console.error('[Gemini Server Diagnostic for Public Info]:', {
-          status: res.status,
-          rawGeminiError: errData.rawGeminiError || errData.message,
-          geminiStatus: errData.geminiStatus,
-          modelTried: errData.modelTried,
-          isAiBusy: errData.isAiBusy,
-          isAiKeyMissing: errData.isAiKeyMissing,
-        });
-        const isBusy = errData.isAiBusy || res.status === 503;
-        const msg = isBusy ? 'AI is busy, please try again in a few minutes' : (errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
-        throw new Error(msg);
-      }
-
-      const data = await res.json();
-      console.log(`[Gemini Server Diagnostic] Public info answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       setPublicData(data.propertyData || {});
       setPublicSources(data.sources || []);
     } catch (err: any) {
       console.error(err);
-      setPublicError(err.message || 'AI is busy, please try again in a few minutes');
+      if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
+        setUpgradePrompt(err.message);
+      } else {
+        setPublicError(normalizeFriendlyAiError(err));
+      }
     } finally {
       setIsCheckingPublic(false);
     }
@@ -268,38 +392,31 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
   const handleCheckMissingFeatures = async () => {
     setIsCheckingGaps(true);
     setGapError(null);
+    setUpgradePrompt(null);
 
     try {
-      const res = await fetch('/api/gemini/missing-features', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await postAiJson<any>(
+        '/api/gemini/missing-features',
+        {
           property,
           state: property.state || 'Michigan',
-        }),
-      });
+        },
+        {
+          currentPlan: planType,
+          creditsUsed,
+          maxCredits,
+          onCreditsSynced: syncAiCredits,
+        }
+      );
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        console.error('[Gemini Server Diagnostic for Missing Features]:', {
-          status: res.status,
-          rawGeminiError: errData.rawGeminiError || errData.message,
-          geminiStatus: errData.geminiStatus,
-          modelTried: errData.modelTried,
-          isAiBusy: errData.isAiBusy,
-          isAiKeyMissing: errData.isAiKeyMissing,
-        });
-        const isBusy = errData.isAiBusy || res.status === 503;
-        const msg = isBusy ? 'AI is busy, please try again in a few minutes' : (errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`));
-        throw new Error(msg);
-      }
-
-      const data = await res.json();
-      console.log(`[Gemini Server Diagnostic] Missing features answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
       setGapQuestions(data.suggestions || []);
     } catch (err: any) {
       console.error(err);
-      setGapError(err.message || 'AI is busy, please try again in a few minutes');
+      if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
+        setUpgradePrompt(err.message);
+      } else {
+        setGapError(normalizeFriendlyAiError(err));
+      }
     } finally {
       setIsCheckingGaps(false);
     }
@@ -318,7 +435,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
     }
   };
 
-  // Build comparison rows
+  // Build normalized comparison rows
   const comparisonRows: PublicPropertyFact[] = publicData
     ? [
         {
@@ -326,52 +443,49 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
           label: 'Bedrooms',
           userValue: property.beds,
           publicValue: publicData.beds,
-          isDifferent: publicData.beds != null && publicData.beds !== property.beds,
+          ...comparePublicField('beds', property.beds, publicData.beds),
         },
         {
           key: 'bathsFull',
           label: 'Full Baths',
           userValue: property.bathsFull,
           publicValue: publicData.baths,
-          isDifferent: publicData.baths != null && publicData.baths !== property.bathsFull,
+          ...comparePublicField('bathsFull', property.bathsFull, publicData.baths),
         },
         {
           key: 'sqft',
           label: 'Square Footage',
           userValue: property.sqft,
           publicValue: publicData.sqft,
-          isDifferent: publicData.sqft != null && publicData.sqft !== property.sqft,
+          ...comparePublicField('sqft', property.sqft, publicData.sqft),
         },
         {
           key: 'lotSize',
           label: 'Lot Size',
           userValue: property.lotSize,
           publicValue: publicData.lotSize,
-          isDifferent: publicData.lotSize != null && publicData.lotSize !== property.lotSize,
+          ...comparePublicField('lotSize', property.lotSize, publicData.lotSize),
         },
         {
           key: 'yearBuilt',
           label: 'Year Built',
           userValue: property.yearBuilt,
           publicValue: publicData.yearBuilt,
-          isDifferent: publicData.yearBuilt != null && publicData.yearBuilt !== property.yearBuilt,
+          ...comparePublicField('yearBuilt', property.yearBuilt, publicData.yearBuilt),
         },
         {
           key: 'schoolDistrict',
           label: 'School District',
           userValue: property.schoolDistrict,
           publicValue: publicData.schoolDistrict,
-          isDifferent:
-            publicData.schoolDistrict != null &&
-            publicData.schoolDistrict.toLowerCase() !== property.schoolDistrict.toLowerCase(),
+          ...comparePublicField('schoolDistrict', property.schoolDistrict, publicData.schoolDistrict),
         },
         {
           key: 'taxes',
           label: 'Annual Taxes ($)',
           userValue: property.taxes,
           publicValue: publicData.annualTaxes,
-          isDifferent:
-            publicData.annualTaxes != null && publicData.annualTaxes !== property.taxes,
+          ...comparePublicField('taxes', property.taxes, publicData.annualTaxes),
         },
       ]
     : [];
@@ -383,6 +497,24 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
         nextLabel="Photos & Studio"
         onNext={() => onNavigate('photos')}
       />
+
+      {upgradePrompt && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <span className="font-semibold">{upgradePrompt}</span>
+          </div>
+          {onOpenPricing && (
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-sm shrink-0"
+            >
+              Upgrade Plan
+            </button>
+          )}
+        </div>
+      )}
 
       {/* TOOL 1: Scan Photos with Gemini Vision */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm">
@@ -659,7 +791,7 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
                           : '—'}
                       </td>
                       <td className="p-3">
-                        {row.publicValue !== undefined && row.publicValue !== null ? (
+                        {row.hasPublic ? (
                           <span
                             className={
                               row.isDifferent
@@ -675,11 +807,13 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
                             )}
                           </span>
                         ) : (
-                          <span className="text-slate-400 italic">Not found</span>
+                          <span className="text-slate-400 italic">No public record found</span>
                         )}
                       </td>
                       <td className="p-3 text-right">
-                        {row.isDifferent && row.publicValue !== null ? (
+                        {!row.hasPublic ? (
+                          <span className="text-xs text-slate-400">—</span>
+                        ) : row.isDifferent ? (
                           <button
                             type="button"
                             onClick={() =>
@@ -693,13 +827,18 @@ export const SectionAiFinder: React.FC<SectionAiFinderProps> = ({
                             Use Public Value
                           </button>
                         ) : (
-                          <span className="text-xs text-slate-400">Match</span>
+                          <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">Match</span>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 text-[11px] text-slate-600 dark:text-slate-300 flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Public records may be out of date — verify with your county records.</span>
             </div>
 
             {/* Sources grounding citation list */}

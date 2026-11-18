@@ -4,16 +4,22 @@ import { db } from '../../lib/firebase';
 import { PropertyProfile, PhotoItem, OpenHouseItem } from '../../types';
 import { SectionMyListing } from '../sections/SectionMyListing';
 import { Compass, AlertCircle, ArrowLeft } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface PublicListingViewProps {
   listingId: string;
   onGoHome: () => void;
+  onGoToDashboard?: () => void;
+  onLogout?: () => void;
 }
 
 export const PublicListingView: React.FC<PublicListingViewProps> = ({
   listingId,
   onGoHome,
+  onGoToDashboard,
+  onLogout,
 }) => {
+  const { currentUser, logout } = useAuth();
   const [property, setProperty] = useState<PropertyProfile | null>(null);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [openHouses, setOpenHouses] = useState<OpenHouseItem[]>([]);
@@ -34,7 +40,6 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
       setNotFound(false);
 
       try {
-        // Read single document from /listings/{listingId} (1 read)
         const listingRef = doc(db, 'listings', listingId);
         const snap = await getDoc(listingRef);
 
@@ -75,7 +80,6 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
             setOpenHouses(data.openHouses);
           }
 
-          // Dynamically set OpenGraph and Title for social share cards
           const displayPrice = loadedProp.price > 0 ? `$${loadedProp.price.toLocaleString()}` : 'For Sale';
           const title = `${displayPrice} · ${loadedProp.address || 'Home For Sale By Owner'} | FSBO Compass`;
           const description = `${loadedProp.beds || 0} Beds · ${loadedProp.bathsFull || 0} Baths · ${
@@ -84,11 +88,11 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
 
           document.title = title;
 
-          const setMetaTag = (property: string, content: string) => {
-            let meta = document.querySelector(`meta[property="${property}"]`) as HTMLMetaElement;
+          const setMetaTag = (propName: string, content: string) => {
+            let meta = document.querySelector(`meta[property="${propName}"]`) as HTMLMetaElement;
             if (!meta) {
               meta = document.createElement('meta');
-              meta.setAttribute('property', property);
+              meta.setAttribute('property', propName);
               document.head.appendChild(meta);
             }
             meta.content = content;
@@ -102,25 +106,34 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
             setMetaTag('og:image', data.photos[0].dataUrl);
           }
         } else if (isMounted) {
-          // If not in cloud listings yet, check localStorage for offline preview
-          const localProp = localStorage.getItem('fsbo_property');
-          if (localProp) {
-            const parsed = JSON.parse(localProp);
-            if (parsed.id === listingId || listingId === 'my-home') {
-              setProperty(parsed);
-              setLoading(false);
-              return;
+          // Only check namespaced owner localStorage if viewing own home while signed in
+          if (currentUser?.uid) {
+            const localProp = localStorage.getItem(`fsbo_u_${currentUser.uid}_property`);
+            if (localProp) {
+              const parsed = JSON.parse(localProp);
+              if (parsed.id === listingId || listingId === currentUser.uid) {
+                setProperty(parsed);
+                setLoading(false);
+                return;
+              }
             }
           }
           setNotFound(true);
         }
       } catch (err: any) {
         console.error('Error loading public listing:', err);
-        // Fallback to local property if viewing own home
-        const localProp = localStorage.getItem('fsbo_property');
-        if (localProp && isMounted) {
-          setProperty(JSON.parse(localProp));
-        } else if (isMounted) {
+        if (currentUser?.uid && isMounted) {
+          const localProp = localStorage.getItem(`fsbo_u_${currentUser.uid}_property`);
+          if (localProp) {
+            const parsed = JSON.parse(localProp);
+            if (parsed.id === listingId || listingId === currentUser.uid) {
+              setProperty(parsed);
+              setLoading(false);
+              return;
+            }
+          }
+        }
+        if (isMounted) {
           setNotFound(true);
         }
       } finally {
@@ -134,7 +147,7 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
       isMounted = false;
       document.title = 'FSBO Compass | Sell Your Home By Owner';
     };
-  }, [listingId]);
+  }, [listingId, currentUser?.uid]);
 
   if (loading) {
     return (
@@ -159,15 +172,12 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
           <AlertCircle className="w-6 h-6" />
         </div>
         <h2 className="text-2xl font-black font-heading text-[#0F2A44] dark:text-white mb-2">
-          Listing Not Found
+          This property page isn't published yet.
         </h2>
-        <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-400 max-w-md mb-6 leading-relaxed">
-          This property listing is either unavailable, has been sold, or the address URL was typed incorrectly.
-        </p>
         <button
           type="button"
           onClick={onGoHome}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F2A44] hover:bg-[#1A3D60] text-white text-xs font-bold transition-all shadow-md"
+          className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F2A44] hover:bg-[#1A3D60] text-white text-xs font-bold transition-all shadow-md"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Go to FSBO Compass</span>
@@ -179,7 +189,7 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-stone-950">
       {/* Top Buyer Header Bar with Logo */}
-      <header className="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 px-4 sm:px-8 py-3.5 flex items-center justify-between">
+      <header className="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={onGoHome}
@@ -193,9 +203,29 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
           </span>
         </button>
 
-        <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
-          For Sale By Owner
-        </span>
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+            For Sale By Owner
+          </span>
+          {currentUser && (
+            <>
+              <button
+                type="button"
+                onClick={onGoToDashboard || onGoHome}
+                className="px-3 py-1.5 rounded-xl bg-[#0F2A44] hover:bg-[#1A3D60] text-white text-xs font-bold transition-colors"
+              >
+                Dashboard
+              </button>
+              <button
+                type="button"
+                onClick={() => (onLogout ? onLogout() : logout())}
+                className="px-3 py-1.5 rounded-xl border border-stone-300 text-stone-700 hover:text-red-600 hover:border-red-300 text-xs font-semibold transition-colors"
+              >
+                Sign Out
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       {/* Main Listing without seller controls */}

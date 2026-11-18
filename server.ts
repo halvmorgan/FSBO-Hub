@@ -7,7 +7,7 @@ import { GoogleGenAI } from '@google/genai';
 import Stripe from 'stripe';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 dotenv.config();
 
@@ -36,11 +36,17 @@ const adminApp = getApps().length === 0
 const adminAuth = getAuth(adminApp);
 const adminDb = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId || undefined);
 
-// Helper to determine the production app URL from APP_URL env var
+// Helper to determine the production app URL from APP_URL env var (never run.app / ai.studio)
 export function getAppUrl(): string {
-  const envUrl = (process.env.APP_URL || '').trim();
-  if (envUrl) {
-    return envUrl.replace(/\/+$/, '');
+  const envUrl = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (
+    envUrl &&
+    /^https?:\/\//i.test(envUrl) &&
+    !envUrl.includes('run.app') &&
+    !envUrl.includes('ai.studio') &&
+    !envUrl.includes('aistudio.google.com')
+  ) {
+    return envUrl;
   }
   return 'https://fsbocompass.com';
 }
@@ -123,8 +129,14 @@ app.post('/api/auth/check-email-provider', async (req: Request, res: Response) =
   }
 });
 
-// In-memory credit tracking cache for low-latency rate limiting and credit checks
-// (Syncs with client/Firestore user record)
+const PLAN_AI_LIMITS: Record<string, number> = {
+  trial: 3,
+  per_listing: 300,
+  bundle: 600,
+  pro: 1000,
+};
+
+// In-memory credit tracking cache (fallback when unauthenticated/demo or offline)
 interface UserCreditRecord {
   creditsUsed: number;
   maxCredits: number;
@@ -136,37 +148,96 @@ const userCreditsCache: Map<string, UserCreditRecord> = new Map();
 function getOrCreateUserCredits(userId: string, plan: 'trial' | 'per_listing' | 'bundle' | 'pro' = 'trial'): UserCreditRecord {
   const currentMonth = new Date().getMonth();
   let record = userCreditsCache.get(userId);
+  const maxForPlan = PLAN_AI_LIMITS[plan] ?? 3;
   if (!record || record.lastResetMonth !== currentMonth) {
-    const limits: Record<string, number> = { trial: 25, per_listing: 300, bundle: 600, pro: 1000 };
     record = {
       creditsUsed: 0,
-      maxCredits: limits[plan] || 25,
+      maxCredits: maxForPlan,
       plan,
       lastResetMonth: currentMonth,
     };
     userCreditsCache.set(userId, record);
+  } else {
+    record.plan = plan;
+    record.maxCredits = maxForPlan;
   }
   return record;
 }
 
-// Middleware to check AI credits without premature deduction
+// Middleware to check AI credits from Firestore (when signed in) without premature deduction
 function checkAiCredits(cost = 1) {
-  return (req: Request, res: Response, next: Function) => {
-    const userId = (req.headers['x-user-id'] as string) || req.body.userId || 'anonymous-seller';
-    const plan = ((req.headers['x-user-plan'] as string) || req.body.userPlan || 'trial') as 'trial' | 'per_listing' | 'bundle' | 'pro';
+  return async (req: Request, res: Response, next: Function) => {
+    let verifiedUid: string | null = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const idToken = authHeader.split('Bearer ')[1]?.trim();
+      if (idToken) {
+        try {
+          const decoded = await adminAuth.verifyIdToken(idToken);
+          verifiedUid = decoded.uid;
+        } catch {
+          verifiedUid = null;
+        }
+      }
+    }
+
+    const fallbackUserId = (req.headers['x-user-id'] as string) || req.body?.userId || 'anonymous-seller';
+    const userId = verifiedUid || fallbackUserId;
+    let plan = ((req.headers['x-user-plan'] as string) || req.body?.userPlan || 'trial') as
+      | 'trial'
+      | 'per_listing'
+      | 'bundle'
+      | 'pro';
 
     const record = getOrCreateUserCredits(userId, plan);
+
+    // Load authoritative creditsUsed and plan from Firestore for authenticated accounts
+    let persistedFromFirestore = false;
+    if (verifiedUid) {
+      try {
+        const userSnap = await adminDb.collection('users').doc(verifiedUid).get();
+        if (userSnap.exists) {
+          const userData = userSnap.data() || {};
+          const dbPlan = (userData.plan || plan) as 'trial' | 'per_listing' | 'bundle' | 'pro';
+          plan = dbPlan;
+          record.plan = dbPlan;
+          record.maxCredits = PLAN_AI_LIMITS[dbPlan] ?? 3;
+          record.creditsUsed = Math.max(
+            typeof userData.aiCreditsUsed === 'number' ? userData.aiCreditsUsed : 0,
+            0
+          );
+          persistedFromFirestore = true;
+        }
+      } catch (err: any) {
+        console.warn('[AI Credits] Could not read Firestore user profile, using cache fallback:', err?.message);
+      }
+    }
+
     if (record.creditsUsed + cost > record.maxCredits) {
       return res.status(403).json({
-        error: `AI credit limit reached (${record.creditsUsed}/${record.maxCredits} credits used this month). Please upgrade your plan to continue using AI tools.`,
+        error:
+          record.plan === 'trial'
+            ? "You've used all 3 free trial AI generations. Upgrade your plan to keep going."
+            : `AI credit limit reached (${record.creditsUsed}/${record.maxCredits} credits used). Please upgrade your plan to continue using AI tools.`,
         creditsUsed: record.creditsUsed,
         maxCredits: record.maxCredits,
+        plan: record.plan,
         upgradeRequired: true,
       });
     }
 
-    (req as any).deductAiCredits = () => {
+    (req as any).deductAiCredits = async () => {
       record.creditsUsed += cost;
+      if (verifiedUid && persistedFromFirestore) {
+        try {
+          await adminDb.collection('users').doc(verifiedUid).update({
+            aiCreditsUsed: FieldValue.increment(cost),
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          console.warn('[AI Credits] Failed to persist increment in Firestore:', err?.message);
+        }
+      }
       return record;
     };
     (req as any).aiCreditRecord = record;
@@ -546,8 +617,8 @@ app.use('/api/gemini', (req: Request, res: Response, next: Function) => {
 // SECURE SERVER-SIDE GEMINI AI ENDPOINTS (With Credit Deduction)
 // -------------------------------------------------------------
 
-// 1. Scan Photos for Features (Gemini Vision, Cost: 2 credits)
-app.post('/api/gemini/photo-features', checkAiCredits(2), async (req: Request, res: Response) => {
+// 1. Scan Photos for Features (Gemini Vision, Cost: 1 credit)
+app.post('/api/gemini/photo-features', checkAiCredits(1), async (req: Request, res: Response) => {
   try {
     const { imageBase64, mimeType = 'image/jpeg', roomHint = '' } = req.body;
     if (!imageBase64) {
@@ -593,7 +664,7 @@ Respond ONLY in valid JSON with this exact structure:
       },
     });
 
-    const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
     const parsed = parseAiJson(response.text || '{}', { roomDetected: 'General', features: [] });
     return res.json({
       ...parsed,
@@ -606,8 +677,8 @@ Respond ONLY in valid JSON with this exact structure:
   }
 });
 
-// 2. AI Photo Coach (Cost: 2 credits)
-app.post('/api/gemini/photo-coach', checkAiCredits(2), async (req: Request, res: Response) => {
+// 2. AI Photo Coach (Cost: 1 credit)
+app.post('/api/gemini/photo-coach', checkAiCredits(1), async (req: Request, res: Response) => {
   try {
     const { imageBase64, mimeType = 'image/jpeg', caption = '' } = req.body;
     if (!imageBase64) {
@@ -649,7 +720,7 @@ Respond ONLY in valid JSON:
       },
     });
 
-    const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
     const parsed = parseAiJson(response.text || '{}', {
       quality: 'Good',
       tip: 'Capture with camera held level at chest height in bright natural daylight.',
@@ -667,8 +738,8 @@ Respond ONLY in valid JSON:
   }
 });
 
-// 3. Check Public Property Records using Google Search Grounding (Cost: 3 credits)
-app.post('/api/gemini/public-info', checkAiCredits(3), async (req: Request, res: Response) => {
+// 3. Check Public Property Records using Google Search Grounding (Cost: 1 credit)
+app.post('/api/gemini/public-info', checkAiCredits(1), async (req: Request, res: Response) => {
   try {
     const { address, state = 'Michigan' } = req.body;
     if (!address) {
@@ -739,7 +810,7 @@ Only output the JSON.`;
     const rawText = response.text || '';
     const propertyData = parseAiJson(rawText, { summary: rawText });
 
-    const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
 
     return res.json({
       propertyData,
@@ -789,7 +860,7 @@ Respond in JSON:
       },
     });
 
-    const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
     const parsed = parseAiJson(response.text || '{"suggestions":[]}', { suggestions: [] });
     return res.json({
       ...parsed,
@@ -802,36 +873,69 @@ Respond in JSON:
   }
 });
 
-// 5. Listing Writer with Fair Housing Compliance Check (Cost: 3 credits)
-app.post('/api/gemini/listing-copy', checkAiCredits(3), async (req: Request, res: Response) => {
+// 5. Listing Writer with Fair Housing Compliance Check (Cost: 1 credit)
+app.post('/api/gemini/listing-copy', checkAiCredits(1), async (req: Request, res: Response) => {
   try {
     const { property, tone = 'Warm', state = 'Michigan' } = req.body;
 
-    const specialThings = (property?.specialNotes || []).filter(Boolean).join('; ');
-    const upgradesText = (property?.upgrades || []).map((u: any) => `${u.item} (${u.year})`).join(', ');
-    const featuresList = (property?.features || []).join(', ');
+    const fullAddress = [property?.address, property?.city, property?.state || state, property?.zip]
+      .filter((v) => v && String(v).trim())
+      .join(', ');
+    const priceLine = property?.price && Number(property.price) > 0 ? `$${Number(property.price).toLocaleString()}` : 'Not provided';
+    const bedsLine = property?.beds && Number(property.beds) > 0 ? `${property.beds} Beds` : null;
+    const bathsFullLine = property?.bathsFull && Number(property.bathsFull) > 0 ? `${property.bathsFull} Full Baths` : null;
+    const bathsHalfLine = property?.bathsHalf && Number(property.bathsHalf) > 0 ? `${property.bathsHalf} Half Baths` : null;
+    const sqftLine = property?.sqft && Number(property.sqft) > 0 ? `${Number(property.sqft).toLocaleString()} Sq Ft` : null;
+    const yearBuiltLine = property?.yearBuilt && Number(property.yearBuilt) > 0 ? `Built in ${property.yearBuilt}` : null;
+    const specsLine = [bedsLine, bathsFullLine, bathsHalfLine, sqftLine, yearBuiltLine].filter(Boolean).join(', ') || 'Not provided';
+
+    const taxesLine = property?.taxes && Number(property.taxes) > 0 ? `$${Number(property.taxes).toLocaleString()}/yr` : 'Not provided';
+    const schoolLine = property?.schoolDistrict && String(property.schoolDistrict).trim() ? property.schoolDistrict : 'Not provided';
+    const lotLine = property?.lotSize && String(property.lotSize).trim() ? property.lotSize : 'Not provided';
+    const specialThings = (property?.specialNotes || []).filter((s: any) => s && String(s).trim()).join('; ');
+    const upgradesText = (property?.upgrades || [])
+      .filter((u: any) => u?.item && String(u.item).trim())
+      .map((u: any) => (u.year ? `${u.item} (${u.year})` : u.item))
+      .join(', ');
+    const featuresList = (property?.features || []).filter((f: any) => f && String(f).trim()).join(', ');
+
+    const mechanicals = [
+      property?.heating ? `Heating: ${property.heating}` : null,
+      property?.cooling ? `Cooling: ${property.cooling}` : null,
+      property?.garage ? `Garage: ${property.garage}` : null,
+      property?.basement ? `Basement: ${property.basement}` : null,
+      property?.roof ? `Roof: ${property.roof}` : null,
+    ].filter(Boolean).join('; ');
 
     const prompt = `You are an expert real estate copywriter and Fair Housing compliance specialist.
-Generate a complete, high-converting home sale listing for this FSBO property in ${state}:
-- Address: ${property?.address || ''}
-- Asking Price: $${property?.price?.toLocaleString() || 'TBD'}
-- Specs: ${property?.beds || 3} Beds, ${property?.bathsFull || 2} Full Baths, ${property?.bathsHalf || 0} Half Baths, ${property?.sqft || 2000} Sq Ft, Built: ${property?.yearBuilt || 1995}
-- Taxes: $${property?.taxes || 'N/A'}/yr, School District: ${property?.schoolDistrict || 'Local district'}
-- Top Special Features: ${specialThings || 'Move-in ready, updated finishes, spacious yard'}
-- Upgrades with years: ${upgradesText || 'None recorded'}
-- Included features: ${featuresList || 'Stainless appliances, hardwood, deck'}
+Use only the property details provided. Do not invent or assume any features, upgrades, appliances, materials, or amenities. If a detail is not provided, leave it out.
+
+Property Details Provided by Seller:
+- Address: ${fullAddress || 'Not provided'}
+- Asking Price: ${priceLine}
+- Specs: ${specsLine}
+- Lot Size: ${lotLine}
+- Annual Taxes: ${taxesLine}
+- School District: ${schoolLine}
+- Systems / Structure: ${mechanicals || 'Not provided'}
+- Seller's Highlight Notes: ${specialThings || 'None provided'}
+- Recorded Upgrades: ${upgradesText || 'None provided'}
+- Seller-Confirmed Features: ${featuresList || 'None provided'}
 - Requested Tone: ${tone}
+
+STRICT ANTI-HALLUCINATION RULE:
+Use only the property details provided. Do not invent or assume any features, upgrades, appliances, materials, or amenities. If a detail is not provided, leave it out.
 
 STRICT FAIR HOUSING REQUIREMENT:
 The Fair Housing Act forbids describing or targeting buyers by race, religion, sex, familial status, disability, or national origin.
 NEVER use phrases like "perfect for young families", "great for singles", "walk to church", "safe neighborhood for kids".
-ALWAYS describe the PHYSICAL FEATURES OF THE HOUSE, never the buyer.
+ALWAYS describe ONLY the confirmed facts and features provided by the seller.
 
 Generate:
 1. "headline": string
 2. "fullDescription": string
-3. "keyFactsBlock": string (formatted lines like "Price: $435,000\nBeds: 4\nBaths: 2 Full, 1 Half\nSq Ft: 2,450\nYear Built: 1998\nTaxes: $4,620/yr\nSchool District: ...")
-4. "upgradesListBlock": string (bullet list with • for each upgrade)
+3. "keyFactsBlock": string (include ONLY provided facts, e.g. Price, Beds, Baths, Sq Ft, Year Built, Taxes, School District — omit any unprovided lines)
+4. "upgradesListBlock": string (bullet list with • for each provided upgrade, or "" if none were provided)
 5. "marketplaceVersion": string
 6. "craigslistVersion": string
 7. "socialPostVersion": string
@@ -850,7 +954,7 @@ Respond in JSON only.`;
       },
     });
 
-    const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
     const parsed = parseAiJson(response.text || '{}', {});
 
     // Normalize keyFactsBlock if returned as an object or array
@@ -931,8 +1035,8 @@ Respond in JSON only.`;
   }
 });
 
-// 6. Check Current Listing Site Rules (Cost: 2 credits)
-app.post('/api/gemini/site-rules', checkAiCredits(2), async (req: Request, res: Response) => {
+// 6. Check Current Listing Site Rules (Cost: 1 credit)
+app.post('/api/gemini/site-rules', checkAiCredits(1), async (req: Request, res: Response) => {
   try {
     const { siteName } = req.body;
     if (!siteName) return res.status(400).json({ error: 'siteName is required' });
@@ -997,7 +1101,7 @@ Only output the JSON.`;
     const rawText = response.text || '';
     const ruleData = parseAiJson(rawText, { currentPolicySummary: rawText, siteName });
 
-    const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
 
     return res.json({
       ruleData,
@@ -1018,8 +1122,8 @@ app.post('/api/gemini/walkthrough-script', checkAiCredits(1), async (req: Reques
     const { property } = req.body;
     const prompt = `Create a smartphone video walkthrough filming script for:
 Address: ${property?.address || 'Your Home'}
-Beds/Baths: ${property?.beds || 3} bed / ${property?.bathsFull || 2} bath, ${property?.sqft || 2000} sqft
-Special features: ${(property?.features || []).slice(0, 8).join(', ')}
+Beds/Baths: ${property?.beds || 'N/A'} bed / ${property?.bathsFull || 'N/A'} bath, ${property?.sqft || 'N/A'} sqft
+Special features: ${(property?.features || []).slice(0, 8).join(', ') || 'None specified'}
 
 Structure as a friendly shot-by-shot smartphone filming guide in JSON:
 {
@@ -1031,7 +1135,7 @@ Structure as a friendly shot-by-shot smartphone filming guide in JSON:
       "sceneNumber": 1,
       "location": "Front Porch",
       "cameraMotion": "Slow pan across front facade",
-      "spokenScript": "Welcome to 123 Maple...",
+      "spokenScript": "Welcome to the home...",
       "duration": "10s"
     }
   ]
@@ -1042,7 +1146,7 @@ Structure as a friendly shot-by-shot smartphone filming guide in JSON:
       config: { responseMimeType: 'application/json' },
     });
 
-    const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
     const parsed = parseAiJson(response.text || '{}', { title: 'Smartphone Walkthrough Video Script', scenes: [] });
     return res.json({
       ...parsed,
@@ -1066,7 +1170,7 @@ Buyer Name: ${buyerName}
 Buyer Message: "${buyerMessage}"
 Seller Name: ${sellerName}
 Seller Phone: ${sellerPhone}
-Property: ${property?.address || 'our home'}, asking $${property?.price?.toLocaleString() || ''}
+Property: ${property?.address || 'our home'}, asking ${property?.price ? `$${property.price.toLocaleString()}` : 'price upon request'}
 
 Draft:
 1. "sms": Concise text message (under 300 chars)
@@ -1080,7 +1184,7 @@ Respond in JSON only.`;
       config: { responseMimeType: 'application/json' },
     });
 
-    const creditRecord = (req as any).deductAiCredits ? (req as any).deductAiCredits() : (req as any).aiCreditRecord;
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
     const parsed = parseAiJson(response.text || '{}', {
       sms: 'Thanks for reaching out! When would you like to view the home?',
       emailSubject: `Regarding ${property?.address || 'the home'}`,
@@ -1295,15 +1399,14 @@ app.post('/api/stripe/webhook', async (req: AuthenticatedRequest, res: Response)
         await adminDb.collection('users').doc(userId).set(updatePayload, { merge: true });
 
         // Update in-memory user credits cache so server AI endpoints immediately reflect upgraded limits
-        const limits: Record<string, number> = { trial: 25, per_listing: 300, bundle: 600, pro: 1000 };
         const cached = userCreditsCache.get(userId);
         if (cached) {
           cached.plan = planId;
-          cached.maxCredits = limits[planId] || 300;
+          cached.maxCredits = PLAN_AI_LIMITS[planId] || 300;
         } else {
           userCreditsCache.set(userId, {
             creditsUsed: 0,
-            maxCredits: limits[planId] || 300,
+            maxCredits: PLAN_AI_LIMITS[planId] || 300,
             plan: planId,
             lastResetMonth: new Date().getMonth(),
           });

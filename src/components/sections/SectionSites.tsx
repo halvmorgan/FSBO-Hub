@@ -28,6 +28,12 @@ import {
 } from 'lucide-react';
 import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
 import { AiWaitNotice } from '../common/AiWaitNotice';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  postAiJson,
+  AiCreditLimitError,
+  normalizeFriendlyAiError,
+} from '../../lib/aiClient';
 
 interface SectionSitesProps {
   sites: ListingSiteItem[];
@@ -35,6 +41,7 @@ interface SectionSitesProps {
   property: PropertyProfile;
   onUpdateSites: (sites: ListingSiteItem[]) => void;
   onNavigate: (tab: ActiveTab) => void;
+  onOpenPricing?: () => void;
 }
 
 export const SectionSites: React.FC<SectionSitesProps> = ({
@@ -43,12 +50,22 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
   property,
   onUpdateSites,
   onNavigate,
+  onOpenPricing,
 }) => {
+  const { userProfile, saasConfig, syncAiCredits } = useAuth();
+  const planType = userProfile?.plan || 'trial';
+  const creditsUsed = userProfile?.aiCreditsUsed || 0;
+  const maxCredits =
+    planType === 'trial'
+      ? 3
+      : saasConfig.plans[planType]?.aiCreditsMonthly || 300;
+
   const [copiedSiteId, setCopiedSiteId] = useState<string | null>(null);
   const [checkingSiteId, setCheckingSiteId] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteUrl, setNewSiteUrl] = useState('');
+  const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
 
   const liveCount = sites.filter((s) => s.status === 'Live').length;
   const progressPct = Math.round((liveCount / sites.length) * 100);
@@ -102,7 +119,7 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
     if (checkingSiteId) {
       setSiteErrors((prev) => ({
         ...prev,
-        [checkingSiteId]: 'AI is busy, please try again',
+        [checkingSiteId]: 'Something went wrong — please try again',
       }));
     }
     setCheckingSiteId(null);
@@ -112,6 +129,7 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
   const handleCheckRules = async (site: ListingSiteItem) => {
     setCheckingSiteId(site.id);
     setErrorMessage(null);
+    setUpgradePrompt(null);
     setSiteErrors((prev) => {
       const copy = { ...prev };
       delete copy[site.id];
@@ -119,30 +137,26 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
     });
 
     try {
-      const res = await fetch('/api/gemini/site-rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteName: site.name }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        console.error('[Gemini Server Diagnostic for Site Rules]:', {
-          status: res.status,
-          rawGeminiError: errJson.rawGeminiError || errJson.message,
-          geminiStatus: errJson.geminiStatus,
-          modelTried: errJson.modelTried,
-          isAiBusy: errJson.isAiBusy,
-        });
-        const isBusy = errJson.isAiBusy || res.status === 503;
-        throw new Error(isBusy ? 'AI is busy, please try again in a few minutes' : (errJson.error || errJson.message || (res.status === 401 ? 'AI key not configured' : `HTTP ${res.status}`)));
-      }
-      const data = await res.json();
-      console.log(`[Gemini Server Diagnostic] Site Rules answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
+      const data = await postAiJson<any>(
+        '/api/gemini/site-rules',
+        { siteName: site.name },
+        {
+          currentPlan: planType,
+          creditsUsed,
+          maxCredits,
+          onCreditsSynced: syncAiCredits,
+        }
+      );
 
       const ruleData = data.ruleData || {};
       const sources = data.sources || [];
-      const asOfDate = data.asOfDate || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      const asOfDate =
+        data.asOfDate ||
+        new Date().toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
 
       const updated = sites.map((s) => {
         if (s.id === site.id) {
@@ -161,10 +175,14 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
       onUpdateSites(updated);
     } catch (err: any) {
       console.error(err);
-      const msg = err.message || 'Rule check failed. Please try again.';
-      setErrorMessage(msg);
-      setSiteErrors((prev) => ({ ...prev, [site.id]: msg }));
-      setTimeout(() => setErrorMessage(null), 8000);
+      if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
+        setUpgradePrompt(err.message);
+      } else {
+        const msg = normalizeFriendlyAiError(err);
+        setErrorMessage(msg);
+        setSiteErrors((prev) => ({ ...prev, [site.id]: msg }));
+        setTimeout(() => setErrorMessage(null), 8000);
+      }
     } finally {
       setCheckingSiteId(null);
     }
@@ -199,6 +217,24 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
         nextLabel="Property Website Builder"
         onNext={() => onNavigate('website')}
       />
+
+      {upgradePrompt && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <span className="font-semibold">{upgradePrompt}</span>
+          </div>
+          {onOpenPricing && (
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-sm shrink-0"
+            >
+              Upgrade Plan
+            </button>
+          )}
+        </div>
+      )}
 
       {errorMessage && (
         <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between">

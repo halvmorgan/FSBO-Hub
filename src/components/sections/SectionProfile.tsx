@@ -224,7 +224,7 @@ export const SectionProfile: React.FC<SectionProfileProps> = ({
                   handleFieldChange('address', newAddr);
                 }
               }}
-              placeholder="e.g. 4288 Meadowview Drive"
+              placeholder="e.g. 123 Main Street"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>
@@ -237,7 +237,7 @@ export const SectionProfile: React.FC<SectionProfileProps> = ({
               type="text"
               value={property.city}
               onChange={(e) => handleFieldChange('city', e.target.value)}
-              placeholder="e.g. Rochester Hills"
+              placeholder="e.g. Austin"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>
@@ -310,7 +310,7 @@ export const SectionProfile: React.FC<SectionProfileProps> = ({
               type="text"
               value={property.schoolDistrict}
               onChange={(e) => handleFieldChange('schoolDistrict', e.target.value)}
-              placeholder="e.g. Rochester Community Schools"
+              placeholder="e.g. Local Public School District"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>

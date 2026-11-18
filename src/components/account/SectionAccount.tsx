@@ -54,8 +54,8 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing, o
   const planType: PlanType = userProfile?.plan || 'trial';
   const planConfig = saasConfig.plans[planType] || saasConfig.plans.trial;
   const creditsUsed = userProfile?.aiCreditsUsed || 0;
-  const creditsMax = planConfig.aiCreditsMonthly;
-  const creditsPercent = Math.min(100, Math.round((creditsUsed / creditsMax) * 100));
+  const creditsMax = planType === 'trial' ? 3 : planConfig.aiCreditsMonthly;
+  const creditsPercent = Math.min(100, Math.round((creditsUsed / Math.max(1, creditsMax)) * 100));
 
   // Handle Stripe Customer Portal
   const handleManageBilling = async () => {
@@ -375,7 +375,9 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing, o
                   AI Intelligence Credits
                 </span>
                 <span>
-                  {creditsUsed} / {creditsMax} used
+                  {(userProfile?.plan || 'trial') === 'trial'
+                    ? `${creditsUsed} of 3 used`
+                    : `${creditsUsed} / ${creditsMax} used`}
                 </span>
               </div>
               <div className="w-full bg-stone-100 dark:bg-stone-800 rounded-full h-3 overflow-hidden">

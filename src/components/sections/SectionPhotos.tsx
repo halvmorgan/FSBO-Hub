@@ -27,6 +27,12 @@ import {
 } from 'lucide-react';
 import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
 import { AiWaitNotice } from '../common/AiWaitNotice';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  postAiJson,
+  AiCreditLimitError,
+  normalizeFriendlyAiError,
+} from '../../lib/aiClient';
 
 interface SectionPhotosProps {
   property: PropertyProfile;
@@ -34,6 +40,7 @@ interface SectionPhotosProps {
   onUpdatePhotos: (photos: PhotoItem[]) => void;
   onUpdateProperty: (prop: PropertyProfile) => void;
   onNavigate: (tab: ActiveTab) => void;
+  onOpenPricing?: () => void;
 }
 
 export const SectionPhotos: React.FC<SectionPhotosProps> = ({
@@ -42,7 +49,17 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
   onUpdatePhotos,
   onUpdateProperty,
   onNavigate,
+  onOpenPricing,
 }) => {
+  const { userProfile, saasConfig, syncAiCredits } = useAuth();
+  const planType = userProfile?.plan || 'trial';
+  const creditsUsed = userProfile?.aiCreditsUsed || 0;
+  const maxCredits =
+    planType === 'trial'
+      ? 3
+      : saasConfig.plans[planType]?.aiCreditsMonthly || 300;
+
+  const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
   const [analyzingPhotoId, setAnalyzingPhotoId] = useState<string | null>(null);
   const [coachErrors, setCoachErrors] = useState<Record<string, string>>({});
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
@@ -53,7 +70,7 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
     if (analyzingPhotoId) {
       setCoachErrors((prev) => ({
         ...prev,
-        [analyzingPhotoId]: 'AI is busy, please try again',
+        [analyzingPhotoId]: 'Something went wrong — please try again',
       }));
     }
     setAnalyzingPhotoId(null);
@@ -61,7 +78,7 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
 
   const { waitMessage: scriptWaitMsg } = useAiWaitTimer(isGeneratingScript, () => {
     setIsGeneratingScript(false);
-    setScriptError('AI is busy, please try again');
+    setScriptError('Something went wrong — please try again');
   });
 
   // Shot list interactive checklist
@@ -226,6 +243,7 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
   // AI Photo Coach
   const handleRunPhotoCoach = async (photo: PhotoItem) => {
     setAnalyzingPhotoId(photo.id);
+    setUpgradePrompt(null);
     setCoachErrors((prev) => {
       const copy = { ...prev };
       delete copy[photo.id];
@@ -248,29 +266,19 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
         }
       }
 
-      const res = await fetch('/api/gemini/photo-coach', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await postAiJson<any>(
+        '/api/gemini/photo-coach',
+        {
           imageBase64: base64ToSend,
           caption: photo.caption,
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        console.error('[Gemini Server Diagnostic for Photo Coach]:', {
-          status: res.status,
-          rawGeminiError: errJson.rawGeminiError || errJson.message,
-          geminiStatus: errJson.geminiStatus,
-          modelTried: errJson.modelTried,
-          isAiBusy: errJson.isAiBusy,
-        });
-        const isBusy = errJson.isAiBusy || res.status === 503;
-        throw new Error(isBusy ? 'AI is busy, please try again in a few minutes' : (errJson.error || errJson.message || `AI review unavailable (${res.status})`));
-      }
-      const data = await res.json();
-      console.log(`[Gemini Server Diagnostic] Photo Coach answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
+        },
+        {
+          currentPlan: planType,
+          creditsUsed,
+          maxCredits,
+          onCreditsSynced: syncAiCredits,
+        }
+      );
 
       const updated = photos.map((p) =>
         p.id === photo.id
@@ -285,10 +293,14 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
       onUpdatePhotos(updated);
     } catch (err: any) {
       console.error(err);
-      setCoachErrors((prev) => ({
-        ...prev,
-        [photo.id]: err.message || 'AI is busy, please try again in a few minutes',
-      }));
+      if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
+        setUpgradePrompt(err.message);
+      } else {
+        setCoachErrors((prev) => ({
+          ...prev,
+          [photo.id]: normalizeFriendlyAiError(err),
+        }));
+      }
     } finally {
       setAnalyzingPhotoId(null);
     }
@@ -298,30 +310,26 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
   const handleGenerateScript = async () => {
     setIsGeneratingScript(true);
     setScriptError(null);
+    setUpgradePrompt(null);
     try {
-      const res = await fetch('/api/gemini/walkthrough-script', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ property }),
-      });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        console.error('[Gemini Server Diagnostic for Walkthrough Script]:', {
-          status: res.status,
-          rawGeminiError: errJson.rawGeminiError || errJson.message,
-          geminiStatus: errJson.geminiStatus,
-          modelTried: errJson.modelTried,
-          isAiBusy: errJson.isAiBusy,
-        });
-        const isBusy = errJson.isAiBusy || res.status === 503;
-        throw new Error(isBusy ? 'AI is busy, please try again in a few minutes' : (errJson.error || errJson.message || `Failed to generate script (${res.status})`));
-      }
-      const data = await res.json();
-      console.log(`[Gemini Server Diagnostic] Walkthrough Script answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
+      const data = await postAiJson<any>(
+        '/api/gemini/walkthrough-script',
+        { property },
+        {
+          currentPlan: planType,
+          creditsUsed,
+          maxCredits,
+          onCreditsSynced: syncAiCredits,
+        }
+      );
       setWalkthroughScript(data);
     } catch (err: any) {
       console.error(err);
-      setScriptError(err.message || 'AI is busy, please try again in a few minutes');
+      if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
+        setUpgradePrompt(err.message);
+      } else {
+        setScriptError(normalizeFriendlyAiError(err));
+      }
     } finally {
       setIsGeneratingScript(false);
     }
@@ -334,6 +342,24 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
         nextLabel="Pricing & Comps"
         onNext={() => onNavigate('pricing')}
       />
+
+      {upgradePrompt && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <span className="font-semibold">{upgradePrompt}</span>
+          </div>
+          {onOpenPricing && (
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-sm shrink-0"
+            >
+              Upgrade Plan
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Main Studio Grid: Photo Manager (also a drag & drop zone) */}
       <div
@@ -405,6 +431,7 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
                   <img
                     src={photo.dataUrl}
                     alt={photo.caption}
+                    loading="lazy"
                     className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300"
                   />
 

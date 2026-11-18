@@ -21,12 +21,19 @@ import {
 } from 'lucide-react';
 import { useAiWaitTimer } from '../../lib/useAiWaitTimer';
 import { AiWaitNotice } from '../common/AiWaitNotice';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  postAiJson,
+  AiCreditLimitError,
+  normalizeFriendlyAiError,
+} from '../../lib/aiClient';
 
 interface SectionListingProps {
   property: PropertyProfile;
   listingCopy: ListingCopyData | null;
   onUpdateListingCopy: (copy: ListingCopyData) => void;
   onNavigate: (tab: ActiveTab) => void;
+  onOpenPricing?: () => void;
 }
 
 export const SectionListing: React.FC<SectionListingProps> = ({
@@ -34,15 +41,25 @@ export const SectionListing: React.FC<SectionListingProps> = ({
   listingCopy,
   onUpdateListingCopy,
   onNavigate,
+  onOpenPricing,
 }) => {
+  const { userProfile, saasConfig, syncAiCredits } = useAuth();
   const [tone, setTone] = useState<'Warm' | 'Professional' | 'Luxury' | 'Investor'>('Warm');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
+
+  const planType = userProfile?.plan || 'trial';
+  const creditsUsed = userProfile?.aiCreditsUsed || 0;
+  const maxCredits =
+    planType === 'trial'
+      ? 3
+      : saasConfig.plans[planType]?.aiCreditsMonthly || 300;
 
   const { waitMessage } = useAiWaitTimer(isGenerating, () => {
     setIsGenerating(false);
-    setErrorMsg('AI is busy, please try again');
+    setErrorMsg('Something went wrong — please try again');
   });
 
   const handleCopy = (key: string, text: string) => {
@@ -54,43 +71,37 @@ export const SectionListing: React.FC<SectionListingProps> = ({
   const handleGenerateCopy = async () => {
     setIsGenerating(true);
     setErrorMsg(null);
+    setUpgradePrompt(null);
 
     try {
-      const res = await fetch('/api/gemini/listing-copy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await postAiJson<any>(
+        '/api/gemini/listing-copy',
+        {
           property,
           tone,
           state: property.state || 'Michigan',
-        }),
-      });
+        },
+        {
+          currentPlan: planType,
+          creditsUsed,
+          maxCredits,
+          onCreditsSynced: syncAiCredits,
+        }
+      );
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        console.error('[Gemini Server Diagnostic for Listing Copy]:', {
-          status: res.status,
-          rawGeminiError: errData.rawGeminiError || errData.message,
-          geminiStatus: errData.geminiStatus,
-          modelTried: errData.modelTried,
-          isAiBusy: errData.isAiBusy,
-          isAiKeyMissing: errData.isAiKeyMissing,
-        });
-        const isBusy = errData.isAiBusy || res.status === 503;
-        const msg = isBusy ? 'AI is busy, please try again in a few minutes' : (errData.error || errData.message || (res.status === 401 ? 'AI key not configured' : `Generation failed (${res.status})`));
-        throw new Error(msg);
-      }
-
-      const data = await res.json();
-      console.log(`[Gemini Server Diagnostic] Listing Copy answered by model: ${data.modelUsed || 'gemini-3.8-flash'}`);
-      
-      const defaultHeadline = `${property.address} - Move-In Ready Home`;
+      const defaultHeadline = property.address
+        ? `${property.address} - For Sale By Owner`
+        : 'For Sale By Owner Listing';
       const updatedCopy = sanitizeListingCopy(data, defaultHeadline, tone);
 
       onUpdateListingCopy(updatedCopy);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.message || 'AI is busy, please try again in a few minutes');
+      if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
+        setUpgradePrompt(err.message);
+      } else {
+        setErrorMsg(normalizeFriendlyAiError(err));
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -176,6 +187,24 @@ export const SectionListing: React.FC<SectionListingProps> = ({
             </button>
           ))}
         </div>
+
+        {upgradePrompt && (
+          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <span className="font-semibold">{upgradePrompt}</span>
+            </div>
+            {onOpenPricing && (
+              <button
+                type="button"
+                onClick={onOpenPricing}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-sm shrink-0"
+              >
+                Upgrade Plan
+              </button>
+            )}
+          </div>
+        )}
 
         {errorMsg && (
           <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 text-xs text-red-600 flex items-center gap-2">

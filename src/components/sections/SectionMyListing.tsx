@@ -387,6 +387,7 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                     <img
                       src={photo.dataUrl}
                       alt={photo.caption || `Photo ${sIdx + 2}`}
+                      loading="lazy"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
@@ -930,7 +931,7 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                         required
                         value={buyerPhone}
                         onChange={(e) => setBuyerPhone(e.target.value)}
-                        placeholder="(248) 555-0192"
+                        placeholder="(555) 123-4567"
                         className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-xs sm:text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none text-[#0F2A44] dark:text-white"
                       />
                     </div>
@@ -1123,7 +1124,7 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                       : 'border-transparent opacity-50 hover:opacity-100'
                   }`}
                 >
-                  <img src={p.dataUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={p.dataUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
                 </button>
               ))}
             </div>

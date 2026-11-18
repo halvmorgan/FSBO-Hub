@@ -609,7 +609,7 @@ export const SectionShowings: React.FC<SectionShowingsProps> = ({
                     type="tel"
                     value={buyerPhone}
                     onChange={(e) => setBuyerPhone(e.target.value)}
-                    placeholder="(248) 555-0144"
+                    placeholder="(555) 123-4567"
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none"
                   />
                 </div>
@@ -619,7 +619,7 @@ export const SectionShowings: React.FC<SectionShowingsProps> = ({
                     type="email"
                     value={buyerEmail}
                     onChange={(e) => setBuyerEmail(e.target.value)}
-                    placeholder="rachel@email.com"
+                    placeholder="buyer@example.com"
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none"
                   />
                 </div>

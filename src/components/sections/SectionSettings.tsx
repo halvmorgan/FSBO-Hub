@@ -137,7 +137,7 @@ export const SectionSettings: React.FC<SectionSettingsProps> = ({
               type="text"
               value={settings.sellerName}
               onChange={(e) => handleFieldChange('sellerName', e.target.value)}
-              placeholder="e.g. Jordan & Taylor Smith"
+              placeholder="Your name(s)"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>
@@ -150,7 +150,7 @@ export const SectionSettings: React.FC<SectionSettingsProps> = ({
               type="tel"
               value={settings.sellerPhone}
               onChange={(e) => handleFieldChange('sellerPhone', e.target.value)}
-              placeholder="(248) 555-0192"
+              placeholder="(555) 123-4567"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>
@@ -163,7 +163,7 @@ export const SectionSettings: React.FC<SectionSettingsProps> = ({
               type="email"
               value={settings.sellerEmail}
               onChange={(e) => handleFieldChange('sellerEmail', e.target.value)}
-              placeholder="taylor@email.com"
+              placeholder="you@example.com"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>
@@ -281,7 +281,7 @@ export const SectionSettings: React.FC<SectionSettingsProps> = ({
               type="url"
               value={settings.homeValueWorksheetUrl}
               onChange={(e) => handleFieldChange('homeValueWorksheetUrl', e.target.value)}
-              placeholder="https://ecenturyappraisal.com"
+              placeholder="https://ecenturyappraisal.com/home-value-worksheet"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>
@@ -294,7 +294,7 @@ export const SectionSettings: React.FC<SectionSettingsProps> = ({
               type="url"
               value={settings.appraisalOrderUrl}
               onChange={(e) => handleFieldChange('appraisalOrderUrl', e.target.value)}
-              placeholder="https://ecenturyappraisal.com"
+              placeholder="https://ecenturyappraisal.com/contact"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
             />
           </div>

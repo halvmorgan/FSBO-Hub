@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { SaasConfig, PlanType } from '../../types/saas';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   Check,
   X,
@@ -15,6 +16,8 @@ interface PricingPageProps {
   onSelectPlan: (planId: PlanType) => void;
   onBackToHome: () => void;
   onLogin: () => void;
+  onGoToDashboard?: () => void;
+  onLogout?: () => void;
 }
 
 export const PricingPage: React.FC<PricingPageProps> = ({
@@ -23,7 +26,10 @@ export const PricingPage: React.FC<PricingPageProps> = ({
   onSelectPlan,
   onBackToHome,
   onLogin,
+  onGoToDashboard,
+  onLogout,
 }) => {
+  const { currentUser, logout } = useAuth();
   const plans = saasConfig.plans;
 
   useEffect(() => {
@@ -65,20 +71,41 @@ export const PricingPage: React.FC<PricingPageProps> = ({
           </button>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBackToHome}
-              className="text-xs text-slate-300 hover:text-white"
-            >
-              &larr; Back to Overview
-            </button>
-            <button
-              type="button"
-              onClick={onLogin}
-              className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
-            >
-              Sign In
-            </button>
+            {currentUser ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onGoToDashboard || onBackToHome}
+                  className="text-xs font-semibold px-3.5 py-1.5 rounded-xl bg-[#FF6B5A] hover:bg-[#fa5644] text-white transition-colors shadow-sm"
+                >
+                  Dashboard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (onLogout ? onLogout() : logout())}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onBackToHome}
+                  className="text-xs text-slate-300 hover:text-white"
+                >
+                  &larr; Back to Overview
+                </button>
+                <button
+                  type="button"
+                  onClick={onLogin}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                >
+                  Sign In
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
