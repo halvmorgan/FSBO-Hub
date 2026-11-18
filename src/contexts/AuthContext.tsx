@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   User as FirebaseUser,
   onAuthStateChanged,
@@ -38,6 +38,7 @@ import {
 } from '../types/saas';
 import { PropertyProfile, PhotoItem } from '../types';
 import { DEFAULT_PROPERTY } from '../lib/defaults';
+import { hasLegacySampleText } from '../lib/sampleScrub';
 import { getAllPhotosFromDB, clearAllDB } from '../lib/indexedDb';
 
 interface AuthContextType {
@@ -45,6 +46,8 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   saasConfig: SaasConfig;
   loading: boolean;
+  authReady: boolean;
+  refreshAuthState: (opts?: { persisted?: boolean }) => Promise<void>;
   userProperties: PropertyProfile[];
   activeProperty: PropertyProfile | null;
   activePropertyId: string | null;
@@ -112,11 +115,66 @@ function getInitialSaasConfig(): SaasConfig {
   return DEFAULT_SAAS_CONFIG;
 }
 
+async function hasFirebasePersistedSession(): Promise<boolean> {
+  try {
+    const lsKeys = Object.keys(localStorage);
+    if (lsKeys.some((k) => k.startsWith('firebase:authUser:') && Boolean(localStorage.getItem(k)))) {
+      return true;
+    }
+    if (typeof indexedDB === 'undefined') return false;
+    return await new Promise<boolean>((resolve) => {
+      const req = indexedDB.open('firebaseLocalStorageDb');
+      req.onerror = () => resolve(false);
+      req.onupgradeneeded = () => {
+        try {
+          req.transaction?.abort();
+        } catch {}
+        resolve(false);
+      };
+      req.onsuccess = () => {
+        try {
+          const idb = req.result;
+          if (!idb.objectStoreNames.contains('firebaseLocalStorage')) {
+            idb.close();
+            resolve(false);
+            return;
+          }
+          const tx = idb.transaction('firebaseLocalStorage', 'readonly');
+          const store = tx.objectStore('firebaseLocalStorage');
+          const getAll = store.getAll();
+          getAll.onsuccess = () => {
+            const rows = getAll.result || [];
+            const hasUser = rows.some((r: any) => Boolean(r?.value?.uid || r?.uid));
+            idb.close();
+            resolve(hasUser);
+          };
+          getAll.onerror = () => {
+            idb.close();
+            resolve(false);
+          };
+        } catch {
+          resolve(false);
+        }
+      };
+    });
+  } catch {
+    return false;
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [saasConfig, setSaasConfig] = useState<SaasConfig>(getInitialSaasConfig);
   const [loading, setLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
+  const [, setAuthCheckTick] = useState(0);
+  const userProfileUidRef = useRef<string | null>(null);
+  const lastRecheckRef = useRef<number>(0);
+
+  useEffect(() => {
+    userProfileUidRef.current = userProfile?.uid || null;
+  }, [userProfile?.uid]);
   const [userProperties, setUserProperties] = useState<PropertyProfile[]>([]);
   const [activePropertyId, setActivePropertyIdState] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
@@ -135,7 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (ownerUid === currentUser.uid && localPropRaw && !localDismissed) {
         const parsed = JSON.parse(localPropRaw);
         const addr = String(parsed?.address || '').trim();
-        const isSample = addr.includes('Meadowview') || addr.includes('Maple Grove');
+        const isSample = hasLegacySampleText(addr) || addr.includes('Maple Grove');
         if (addr && !isSample && !userProperties.some((p) => p.setupComplete || (p.address && p.address.trim()))) {
           setHasLocalDataToImport(true);
           return;
@@ -197,6 +255,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isAdminEmail = fbUser.email?.toLowerCase() === 'halvmorgan@gmail.com';
 
       if (!userSnap.exists()) {
+        await clearAllDB().catch(() => {});
         const trialEnd = new Date(Date.now() + 7 * 86400000).toISOString();
         const newProfile: UserProfile = {
           uid: fbUser.uid,
@@ -255,7 +314,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: notifRef.id,
           uid: fbUser.uid,
           title: 'Welcome to FSBO Compass!',
-          message: 'Your 7-day Free Trial is active. Start by customizing your property facts and uploading photos.',
+          message: 'Your 7-day Free Trial is active. Start by customizing your property facts and uploading photos. FSBO Compass is provided by Ecentury Appraisal Services. This is the name that will appear on your billing statement.',
           type: 'system',
           read: false,
           createdAt: new Date().toISOString(),
@@ -326,6 +385,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       setCurrentUser(fbUser);
+      setAuthReady(true);
 
       try {
         if (fbUser) {
@@ -352,11 +412,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Auth state handling failed:', err);
         setLoadError(`Failed to load your property and account info. Please try again. (Details: ${(err as any)?.code || (err as any)?.message || String(err)})`);
       } finally {
+        setAuthReady(true);
         setLoading(false);
       }
     });
 
     return () => unsub();
+  }, []);
+
+  // Re-check live Firebase auth state (handles bfcache pageshow, tab visibility, and window focus)
+  const refreshAuthState = async (opts?: { persisted?: boolean }) => {
+    const isPersisted = Boolean(opts?.persisted);
+    const now = Date.now();
+    if (!isPersisted && now - lastRecheckRef.current < 300) {
+      return;
+    }
+    lastRecheckRef.current = now;
+
+    if (isPersisted && !auth.currentUser) {
+      setAuthReady(false);
+    }
+
+    try {
+      await auth.authStateReady();
+      const liveUser = auth.currentUser;
+
+      setCurrentUser(liveUser);
+      setAuthCheckTick((t) => t + 1);
+
+      if (liveUser) {
+        try {
+          sessionStorage.removeItem('fsbo_bfc_reloaded');
+        } catch {}
+        if (userProfileUidRef.current !== liveUser.uid) {
+          void fetchUserProfile(liveUser);
+        }
+      } else if (isPersisted) {
+        const hasSession = await hasFirebasePersistedSession();
+        if (hasSession && !sessionStorage.getItem('fsbo_bfc_reloaded')) {
+          try {
+            sessionStorage.setItem('fsbo_bfc_reloaded', '1');
+          } catch {}
+          window.location.reload();
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Auth state re-check error:', err);
+    } finally {
+      setAuthReady(true);
+    }
+  };
+
+  // Global listeners on every page for bfcache restore (pageshow), visibilitychange, and window focus
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      void refreshAuthState({ persisted: Boolean(e.persisted) });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshAuthState();
+      }
+    };
+    const handleFocus = () => {
+      void refreshAuthState();
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   // 4. Sync User Profile & Properties in Real Time (Subscribes strictly ONCE per signed-in user)
@@ -682,6 +812,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userProfile,
         saasConfig,
         loading,
+        authReady,
+        refreshAuthState,
         userProperties,
         activeProperty,
         activePropertyId,

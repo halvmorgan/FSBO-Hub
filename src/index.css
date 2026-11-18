@@ -38,15 +38,80 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
+@page {
+  size: letter portrait;
+  margin: 0.4in;
+}
+
 @media print {
-  .no-print {
+  html,
+  body,
+  #root {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #0F2A44 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print,
+  .print-hide,
+  header:not(.flyer-header),
+  nav,
+  aside,
+  footer:not(.flyer-footer),
+  button {
     display: none !important;
   }
+
   .print-only {
     display: block !important;
   }
-  body {
-    background: white !important;
-    color: black !important;
+
+  .print-flyer-sheet {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 7.7in !important;
+    max-height: 10.1in !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+    color: #0F2A44 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-before: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .print-flyer-card {
+    padding: 0.2in !important;
+    height: auto !important;
+    max-height: 10.05in !important;
+    overflow: hidden !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print-flyer-main-photo {
+    width: 100% !important;
+    height: 3.1in !important;
+    max-height: 3.35in !important;
+    object-fit: cover !important;
+  }
+
+  .print-flyer-thumb {
+    width: 100% !important;
+    height: 0.85in !important;
+    max-height: 0.9in !important;
+    object-fit: cover !important;
   }
 }

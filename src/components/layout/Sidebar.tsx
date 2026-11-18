@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { ActiveTab, Settings } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { STRIPE_CHECKOUT_NOTICE_TEXT } from '../common/StripeBillingNotice';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -345,7 +346,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       {/* Desktop & Tablet Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 xl:w-72 bg-[#0F2A44] text-white min-h-screen shrink-0 border-r border-[#1E4268]/40 shadow-xl z-20 sticky top-0 h-screen font-sans">
+      <aside className="hidden lg:flex print:hidden flex-col w-64 xl:w-72 bg-[#0F2A44] text-white min-h-screen shrink-0 border-r border-[#1E4268]/40 shadow-xl z-20 sticky top-0 h-screen font-sans">
         {/* Brand Header */}
         <div className="p-5 border-b border-[#1E4268]/40">
           <div className="flex items-center justify-between">
@@ -458,15 +459,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </button>
                     )
                   ) : (
-                    <button
-                      onClick={() => {
-                        setPropertyDropdownOpen(false);
-                        if (onOpenPricing) onOpenPricing();
-                      }}
-                      className="w-full py-1.5 px-2 bg-[#14385A] hover:bg-[#1E4E7A] text-[#F2B544] rounded-lg text-[10px] font-bold text-center block"
-                    >
-                      Plan limit reached ({planConfig.propertyLimit}/{planConfig.propertyLimit}) &bull; Upgrade to Pro
-                    </button>
+                    <div className="space-y-1.5">
+                      <button
+                        onClick={() => {
+                          setPropertyDropdownOpen(false);
+                          if (onOpenPricing) onOpenPricing();
+                        }}
+                        className="w-full py-1.5 px-2 bg-[#14385A] hover:bg-[#1E4E7A] text-[#F2B544] rounded-lg text-[10px] font-bold text-center block"
+                      >
+                        Plan limit reached ({planConfig.propertyLimit}/{planConfig.propertyLimit}) &bull; Upgrade to Pro
+                      </button>
+                      <p className="text-[10px] leading-snug text-slate-400 px-1">
+                        {STRIPE_CHECKOUT_NOTICE_TEXT}
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -541,7 +547,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </aside>
 
       {/* Mobile Top Bar */}
-      <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-2.5 bg-[#0F2A44] text-white shadow-md font-sans">
+      <header className="lg:hidden print:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-2.5 bg-[#0F2A44] text-white shadow-md font-sans">
         <button
           type="button"
           onClick={() => handleSelectTab('my-listing')}
@@ -576,7 +582,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Mobile Full Navigation Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex font-sans">
+        <div className="lg:hidden print:hidden fixed inset-0 z-50 flex font-sans">
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setMobileMenuOpen(false)}
@@ -647,7 +653,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Mobile Bottom Quick Tab Bar */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#0F2A44] border-t border-[#1E4268]/50 px-2 py-1.5 flex items-center justify-around text-slate-300 font-sans">
+      <div className="lg:hidden print:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#0F2A44] border-t border-[#1E4268]/50 px-2 py-1.5 flex items-center justify-around text-slate-300 font-sans">
         <button
           type="button"
           onClick={() => setActiveTab('my-listing')}

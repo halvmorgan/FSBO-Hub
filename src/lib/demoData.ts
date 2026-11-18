@@ -11,11 +11,6 @@ import {
   InquiryItem,
 } from '../types';
 
-import houseExteriorFront from '../assets/images/house_exterior_front_1794286496562.jpg';
-import houseKitchenInterior from '../assets/images/house_kitchen_interior_1794286509490.jpg';
-import houseLivingRoom from '../assets/images/house_living_room_1794286521686.jpg';
-import houseBackyard from '../assets/images/house_backyard_1794286533470.jpg';
-
 export const DEMO_SETTINGS: Settings = {
   sellerName: 'Demo Homeowner',
   sellerPhone: '(555) 010-2480',
@@ -30,7 +25,7 @@ export const DEMO_SETTINGS: Settings = {
 };
 
 export const DEMO_PROPERTY: PropertyProfile = {
-  address: '4288 Maple Grove Ct (Demo)',
+  address: '123 Oak Ridge Ct (Demo)',
   city: 'Troy',
   state: 'Michigan',
   zip: '48084',
@@ -41,7 +36,7 @@ export const DEMO_PROPERTY: PropertyProfile = {
   beds: 4,
   bathsFull: 2,
   bathsHalf: 1,
-  sqft: 2450,
+  sqft: 1950,
   lotSize: '0.34 acres',
   yearBuilt: 1998,
   taxes: 4620,
@@ -65,7 +60,7 @@ export const DEMO_PROPERTY: PropertyProfile = {
     { id: 'u1', item: 'Architectural Shingle Roof', year: '2022', cost: 12500 },
     { id: 'u2', item: 'High-Efficiency Furnace & Central A/C', year: '2021', cost: 8900 },
     { id: 'u3', item: 'Full Kitchen Remodel (Quartz & Cabinets)', year: '2023', cost: 24000 },
-    { id: 'u4', item: 'Composite Backyard Trex Deck', year: '2020', cost: 9500 },
+    { id: 'u4', item: 'Composite Backyard Deck', year: '2020', cost: 9500 },
   ],
   specialNotes: [
     'Private wooded lot backing up to township green space with no rear neighbors',
@@ -90,52 +85,7 @@ export const DEMO_PROPERTY: PropertyProfile = {
   setupComplete: true,
 };
 
-export const DEMO_PHOTOS: PhotoItem[] = [
-  {
-    id: 'sample-front',
-    dataUrl: houseExteriorFront,
-    caption: 'Front Exterior & Landscaping',
-    isCover: true,
-    roomCategory: 'Exterior',
-    order: 0,
-    coachQuality: 'Great',
-    coachTip: 'Superb daylight exposure and level wide shot highlighting curb appeal and architecture.',
-    analyzed: true,
-  },
-  {
-    id: 'sample-kitchen',
-    dataUrl: houseKitchenInterior,
-    caption: 'Chef Kitchen with Quartz Waterfall Island & Stainless Appliances',
-    isCover: false,
-    roomCategory: 'Kitchen',
-    order: 1,
-    coachQuality: 'Great',
-    coachTip: 'Spotless quartz countertops and brilliant natural lighting throughout.',
-    analyzed: true,
-  },
-  {
-    id: 'sample-living',
-    dataUrl: houseLivingRoom,
-    caption: 'Spacious Living Room with Hardwood Floors & Stone Fireplace',
-    isCover: false,
-    roomCategory: 'Living Room',
-    order: 2,
-    coachQuality: 'Great',
-    coachTip: 'Warm and inviting seating layout with excellent natural window lighting.',
-    analyzed: true,
-  },
-  {
-    id: 'sample-backyard',
-    dataUrl: houseBackyard,
-    caption: 'Private Backyard with Trex Deck & Mature Trees',
-    isCover: false,
-    roomCategory: 'Outdoor',
-    order: 3,
-    coachQuality: 'Great',
-    coachTip: 'Sunny deck shot emphasizing generous lawn space and private perimeter.',
-    analyzed: true,
-  },
-];
+export const DEMO_PHOTOS: PhotoItem[] = [];
 
 export const DEMO_COMPS: CompSale[] = [
   {

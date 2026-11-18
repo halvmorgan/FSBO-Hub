@@ -27,6 +27,12 @@ import {
 } from './lib/defaults';
 import { getAllPhotosFromDB, clearAllDB } from './lib/indexedDb';
 import { sanitizeListingCopy } from './lib/formatAiCopy';
+import {
+  sanitizeSavedDescription,
+  sanitizeSpecialNotes,
+  hasLegacySampleText,
+  isStockPhotoUrl,
+} from './lib/sampleScrub';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { LandingPage } from './components/public/LandingPage';
@@ -176,6 +182,93 @@ function writeUserKey(uid: string, key: string, value: any) {
   }
 }
 
+type AppView =
+  | 'app'
+  | 'landing'
+  | 'pricing'
+  | 'terms'
+  | 'privacy'
+  | 'property'
+  | 'listing'
+  | 'signup'
+  | 'login';
+
+function getInitialRouteState(): {
+  view: AppView;
+  listingId: string;
+  propertySlug: string;
+} {
+  if (typeof window === 'undefined') {
+    return { view: 'app', listingId: '', propertySlug: '' };
+  }
+  const path = window.location.pathname;
+  if (path.startsWith('/listing/')) {
+    return {
+      view: 'listing',
+      listingId: path.replace(/^\/listing\//, '').split('/')[0] || '',
+      propertySlug: '',
+    };
+  }
+  if (path.startsWith('/p/')) {
+    return {
+      view: 'property',
+      listingId: '',
+      propertySlug: path.replace(/^\/p\//, '').split('/')[0] || '',
+    };
+  }
+  if (path === '/terms') return { view: 'terms', listingId: '', propertySlug: '' };
+  if (path === '/privacy') return { view: 'privacy', listingId: '', propertySlug: '' };
+  if (path === '/pricing') return { view: 'pricing', listingId: '', propertySlug: '' };
+  if (path === '/signup') return { view: 'signup', listingId: '', propertySlug: '' };
+  if (path === '/login') return { view: 'login', listingId: '', propertySlug: '' };
+  return { view: 'app', listingId: '', propertySlug: '' };
+}
+
+function scrubPropertyData(prop: PropertyProfile): {
+  cleaned: PropertyProfile;
+  hadLegacySample: boolean;
+} {
+  const rawDesc = prop.description || '';
+  const cleanedDesc = sanitizeSavedDescription(rawDesc);
+  const hadDescSample = Boolean(rawDesc && !cleanedDesc && hasLegacySampleText(rawDesc));
+
+  const rawNotes = Array.isArray(prop.specialNotes) ? prop.specialNotes : [];
+  const hadNoteSample = rawNotes.some((n) => hasLegacySampleText(n));
+  const cleanedNotesList = sanitizeSpecialNotes(rawNotes);
+  const cleanedNotesTuple: [string, string, string] = [
+    cleanedNotesList[0] || '',
+    cleanedNotesList[1] || '',
+    cleanedNotesList[2] || '',
+  ];
+
+  const rawFeatures = Array.isArray(prop.features) ? prop.features : [];
+  const hadFeatureSample = rawFeatures.some((f) => hasLegacySampleText(f));
+  const cleanedFeatures = rawFeatures.filter((f) => !hasLegacySampleText(f));
+
+  const rawUpgrades = Array.isArray(prop.upgrades) ? prop.upgrades : [];
+  const hadUpgradeSample = rawUpgrades.some((u) => hasLegacySampleText(u?.item));
+  const cleanedUpgrades = rawUpgrades.filter((u) => !hasLegacySampleText(u?.item));
+
+  const rawPhotos = Array.isArray(prop.photos) ? prop.photos : [];
+  const cleanedPhotos = rawPhotos.filter((p) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl));
+  const hadStockPhoto = cleanedPhotos.length !== rawPhotos.length;
+
+  const hadLegacySample =
+    hadDescSample || hadNoteSample || hadFeatureSample || hadUpgradeSample || hadStockPhoto;
+
+  return {
+    hadLegacySample,
+    cleaned: {
+      ...prop,
+      description: cleanedDesc,
+      specialNotes: cleanedNotesTuple,
+      features: cleanedFeatures,
+      upgrades: cleanedUpgrades,
+      photos: cleanedPhotos,
+    },
+  };
+}
+
 function PageLoader() {
   return (
     <div className="min-h-[45vh] flex flex-col items-center justify-center p-8 text-center font-sans">
@@ -203,11 +296,13 @@ function AppContent() {
     logout,
   } = useAuth();
 
+  const initialRoute = getInitialRouteState();
+
   // Navigation State
   const [activeTab, setActiveTab] = useState<ActiveTab>('my-listing');
-  const [currentView, setCurrentView] = useState<'app' | 'landing' | 'pricing' | 'terms' | 'privacy' | 'property' | 'listing'>('app');
-  const [publicPropertySlug, setPublicPropertySlug] = useState<string>('');
-  const [publicListingId, setPublicListingId] = useState<string>('');
+  const [currentView, setCurrentView] = useState<AppView>(initialRoute.view);
+  const [publicPropertySlug, setPublicPropertySlug] = useState<string>(initialRoute.propertySlug);
+  const [publicListingId, setPublicListingId] = useState<string>(initialRoute.listingId);
 
   // Modals & Menus (pendingPlan is strictly in-memory, never persisted across refreshes)
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -218,9 +313,15 @@ function AppContent() {
   const [skippedWizard, setSkippedWizard] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
   const [loggedOutMessage, setLoggedOutMessage] = useState<string | null>(null);
+  const [showPaymentSuccess, setShowPaymentSuccess] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('payment_success') === 'true';
+  });
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const hydratedUidRef = useRef<string | null>(null);
+  const scrubbedCloudPropIdsRef = useRef<Set<string>>(new Set());
+  const syncedPublicListingKeysRef = useRef<Set<string>>(new Set());
 
   // Clean empty initial state (no sample/other-user localStorage leaked before auth resolves)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -292,11 +393,20 @@ function AppContent() {
           currentUser?.email ||
           '',
       });
-      setProperty(readUserKey<PropertyProfile>(uid, 'property', BLANK_PROPERTY));
+      const loadedProp = readUserKey<PropertyProfile>(uid, 'property', BLANK_PROPERTY);
+      const { cleaned: cleanedLocalProp } = scrubPropertyData(loadedProp);
+      setProperty(cleanedLocalProp);
       setComps(readUserKey<CompSale[]>(uid, 'comps', DEFAULT_COMPS));
       setPriceHistory(readUserKey<PriceHistoryRecord[]>(uid, 'price_history', []));
       const savedCopy = readUserKey<ListingCopyData | null>(uid, 'listing_copy', null);
-      setListingCopy(savedCopy ? sanitizeListingCopy(savedCopy) : null);
+      const sanitizedCopy = savedCopy ? sanitizeListingCopy(savedCopy) : null;
+      setListingCopy(
+        sanitizedCopy &&
+          !hasLegacySampleText(sanitizedCopy.fullDescription) &&
+          !hasLegacySampleText(sanitizedCopy.headline)
+          ? sanitizedCopy
+          : null
+      );
       setSites(readUserKey<ListingSiteItem[]>(uid, 'sites', DEFAULT_SITES));
       setShowings(readUserKey<ShowingItem[]>(uid, 'showings', []));
       setOpenHouses(readUserKey<OpenHouseItem[]>(uid, 'open_houses', []));
@@ -383,9 +493,8 @@ function AppContent() {
           setActiveTab('my-listing');
         } else {
           setPendingPlan(null);
-          setCurrentView('landing');
-          setAuthModalMode(path === '/signup' ? 'signup' : 'login');
-          setAuthModalOpen(true);
+          setAuthModalOpen(false);
+          setCurrentView(path === '/signup' ? 'signup' : 'login');
         }
         return;
       }
@@ -494,18 +603,43 @@ function AppContent() {
     }
   }, [currentUser, authLoading, userProfile, hasFilledInfo, skippedWizard]);
 
-  // Sync activeProperty from Cloud into state
+  // Sync activeProperty from Cloud into state, scrub legacy sample values, and keep /listings/{id} current
   useEffect(() => {
-    if (activeProperty && !demoMode) {
-      setProperty((prev) => ({
-        ...prev,
-        ...activeProperty,
-      }));
-      if (Array.isArray(activeProperty.photos) && activeProperty.photos.length > 0) {
-        setPhotos(activeProperty.photos);
+    if (!activeProperty || demoMode) return;
+
+    const { cleaned, hadLegacySample } = scrubPropertyData(activeProperty);
+    setProperty((prev) => ({
+      ...prev,
+      ...cleaned,
+    }));
+
+    const cleanedPhotos = (Array.isArray(cleaned.photos) ? cleaned.photos : []).filter(
+      (p) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl)
+    );
+    if (cleanedPhotos.length > 0) {
+      setPhotos(cleanedPhotos);
+    } else if (
+      Array.isArray(activeProperty.photos) &&
+      activeProperty.photos.some((p) => isStockPhotoUrl(p?.dataUrl))
+    ) {
+      setPhotos([]);
+    }
+
+    if (hadLegacySample && activeProperty.id && !scrubbedCloudPropIdsRef.current.has(activeProperty.id)) {
+      scrubbedCloudPropIdsRef.current.add(activeProperty.id);
+      updateCurrentProperty(cleaned).catch((err) =>
+        console.warn('Could not scrub legacy sample fields on property:', err)
+      );
+    }
+
+    if (currentUser && activeProperty.id) {
+      const syncKey = `${activeProperty.id}:${(activeProperty as any).updatedAt || ''}:${hadLegacySample ? 'scrub' : 'clean'}`;
+      if (hadLegacySample || !syncedPublicListingKeysRef.current.has(syncKey)) {
+        syncedPublicListingKeysRef.current.add(syncKey);
+        syncPublicListing(cleaned, cleanedPhotos, openHouses).catch(() => {});
       }
     }
-  }, [activeProperty, demoMode]);
+  }, [activeProperty, demoMode, currentUser?.uid]);
 
   // Helper to sync public listing document (/listings/{listingId}) for buyer view
   const syncPublicListing = async (
@@ -516,6 +650,11 @@ function AppContent() {
     if (!currentUser || demoMode) return;
     const listingId = propToSync.id || activeProperty?.id || propToSync.publishedSlug || currentUser.uid;
     if (!listingId) return;
+
+    const cleanPhotos = (photosToSync || []).filter((p) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl));
+    const cleanFeatures = (propToSync.features || []).filter((f) => !hasLegacySampleText(f));
+    const cleanUpgrades = (propToSync.upgrades || []).filter((u) => !hasLegacySampleText(u?.item));
+    const cleanDescription = sanitizeSavedDescription(propToSync.description);
 
     try {
       const publicPayload = {
@@ -541,10 +680,10 @@ function AppContent() {
         taxes: propToSync.taxes || 0,
         hoa: propToSync.hoa || { hasHoa: false, monthlyFee: 0, name: '' },
         schoolDistrict: propToSync.schoolDistrict || '',
-        description: propToSync.description || listingCopy?.fullDescription || '',
-        features: propToSync.features || [],
-        upgrades: propToSync.upgrades || [],
-        photos: photosToSync.map((p, idx) => ({
+        description: cleanDescription,
+        features: cleanFeatures,
+        upgrades: cleanUpgrades,
+        photos: cleanPhotos.map((p, idx) => ({
           id: p.id,
           dataUrl: p.dataUrl,
           caption: p.caption || '',
@@ -618,15 +757,17 @@ function AppContent() {
     }
   }, []);
 
-  // Load photos from IndexedDB for authenticated users (never force sample photos onto real users)
+  // Load photos from IndexedDB ONLY when strictly owned by currentUser and never stock images
   useEffect(() => {
     const loadPhotos = async () => {
       if (!currentUser || demoMode) return;
       try {
         const dbPhotos = await getAllPhotosFromDB();
-        const hasLegacyUnsplash = dbPhotos && dbPhotos.some((p: any) => p.dataUrl?.includes('unsplash'));
-        if (dbPhotos && dbPhotos.length > 0 && !hasLegacyUnsplash) {
-          setPhotos((prev) => (prev.length > 0 ? prev : dbPhotos));
+        const ownedPhotos = (dbPhotos || []).filter(
+          (p: any) => p && p.ownerUid === currentUser.uid && p.dataUrl && !isStockPhotoUrl(p.dataUrl)
+        );
+        if (ownedPhotos.length > 0) {
+          setPhotos((prev) => (prev.length > 0 ? prev : ownedPhotos));
         }
       } catch (err) {
         console.warn('Could not read IndexedDB photos:', err);
@@ -829,6 +970,8 @@ function AppContent() {
     setSkippedWizard(false);
     setPendingPlan(null);
     hydratedUidRef.current = null;
+    scrubbedCloudPropIdsRef.current.clear();
+    syncedPublicListingKeysRef.current.clear();
 
     try {
       await logout();
@@ -1042,6 +1185,28 @@ function AppContent() {
     );
   }
 
+  // 4b. Dedicated Standalone Sign Up / Log In Routes (/signup and /login)
+  if ((currentView === 'signup' || currentView === 'login') && !currentUser) {
+    return (
+      <AuthModal
+        isOpen={true}
+        standalone={true}
+        initialMode={currentView === 'signup' ? 'signup' : 'login'}
+        onSwitchMode={(nextMode) => {
+          const nextPath = nextMode === 'signup' ? '/signup' : '/login';
+          window.history.replaceState({}, '', nextPath);
+          setCurrentView(nextMode);
+        }}
+        onClose={() => {
+          setPendingPlan(null);
+          window.history.pushState({}, '', '/');
+          setCurrentView('landing');
+        }}
+        onSuccess={handleAuthSuccess}
+      />
+    );
+  }
+
   // 5. Loading State: While Firebase Auth or Firestore user is initializing
   if (authLoading) {
     return (
@@ -1102,15 +1267,13 @@ function AppContent() {
             setLoggedOutMessage(null);
             setPendingPlan(null);
             window.history.pushState({}, '', '/signup');
-            setAuthModalMode('signup');
-            setAuthModalOpen(true);
+            setCurrentView('signup');
           }}
           onLogin={() => {
             setLoggedOutMessage(null);
             setPendingPlan(null);
             window.history.pushState({}, '', '/login');
-            setAuthModalMode('login');
-            setAuthModalOpen(true);
+            setCurrentView('login');
           }}
           onViewPricing={() => {
             window.history.pushState({}, '', '/pricing');
@@ -1150,7 +1313,7 @@ function AppContent() {
 
   // 8. Authenticated FSBO Compass Workspace
   return (
-    <div className="min-h-screen bg-[#F8F6F2] dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100 flex flex-col lg:flex-row antialiased selection:bg-[#FF6B5A] selection:text-white font-sans">
+    <div className="min-h-screen print:min-h-0 bg-[#F8F6F2] print:bg-white dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100 flex flex-col lg:flex-row print:block antialiased selection:bg-[#FF6B5A] selection:text-white font-sans">
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
@@ -1171,9 +1334,9 @@ function AppContent() {
       />
 
       {/* Main Content Workspace */}
-      <main className="flex-1 min-w-0 pb-20 lg:pb-12 overflow-y-auto">
+      <main className="flex-1 min-w-0 pb-20 lg:pb-12 print:pb-0 overflow-y-auto print:overflow-visible">
         {/* Top App Bar */}
-        <header className="sticky top-12 lg:top-0 z-20 bg-white/90 dark:bg-stone-900/90 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+        <header className="sticky top-12 lg:top-0 z-20 print:hidden bg-white/90 dark:bg-stone-900/90 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -1286,7 +1449,7 @@ function AppContent() {
 
         {/* Local Data Migration Banner */}
         {hasLocalDataToImport && currentUser && !demoMode && (
-          <div className="bg-sky-50 dark:bg-sky-950/40 border-b border-sky-200 dark:border-sky-800 p-3.5 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-xs text-sky-900 dark:text-sky-200">
+          <div className="print:hidden bg-sky-50 dark:bg-sky-950/40 border-b border-sky-200 dark:border-sky-800 p-3.5 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-xs text-sky-900 dark:text-sky-200">
             <div className="flex items-center gap-2.5">
               <CloudUpload className="w-5 h-5 text-sky-600 shrink-0" />
               <span>
@@ -1316,6 +1479,7 @@ function AppContent() {
             <SectionMyListing
               property={property}
               photos={photos}
+              ownerUid={currentUser?.uid}
               openHouses={openHouses}
               inquiriesCount={inquiries.length}
               isSellerView={true}
@@ -1330,7 +1494,7 @@ function AppContent() {
               onAddPhotos={() => handleSelectAuthenticatedTab('photos')}
             />
           ) : (
-            <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+            <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 print:p-0 print:max-w-none">
               {activeTab === 'dashboard' && (
                 <SectionDashboard
                   property={property}
@@ -1511,6 +1675,8 @@ function AppContent() {
 
               {activeTab === 'account' && (
                 <SectionAccount
+                  paymentSuccess={showPaymentSuccess}
+                  onDismissPaymentSuccess={() => setShowPaymentSuccess(false)}
                   onOpenPricing={() => {
                     window.history.pushState({}, '', '/pricing');
                     setCurrentView('pricing');
@@ -1579,12 +1745,15 @@ function AppContent() {
           <OnboardingWizard
             property={property}
             photos={photos}
+            ownerUid={currentUser?.uid}
             isEditing={hasFilledInfo}
             onComplete={async (updatedProp, updatedPhotos) => {
-              let uploadedPhotos = updatedPhotos;
+              let uploadedPhotos = (updatedPhotos || []).filter(
+                (p) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl)
+              );
               if (currentUser && !demoMode) {
                 uploadedPhotos = await Promise.all(
-                  updatedPhotos.map(async (p) => {
+                  uploadedPhotos.map(async (p) => {
                     if (p.dataUrl && !p.dataUrl.startsWith('http')) {
                       const url = await uploadListingPhoto(currentUser.uid, p.id, p.dataUrl);
                       return { ...p, dataUrl: url };
@@ -1595,13 +1764,14 @@ function AppContent() {
               }
 
               const listingId = updatedProp.id || activeProperty?.id || currentUser?.uid || 'my-home';
-              const finalProp: PropertyProfile = {
+              const { cleaned } = scrubPropertyData({
                 ...updatedProp,
                 id: listingId,
                 published: updatedProp.published ?? true,
                 setupComplete: true,
                 photos: uploadedPhotos,
-              };
+              });
+              const finalProp: PropertyProfile = cleaned;
 
               setPhotos(uploadedPhotos);
               setProperty(finalProp);

@@ -7,6 +7,8 @@ interface AuthModalProps {
   onClose: () => void;
   initialMode?: 'login' | 'signup';
   onSuccess?: () => void;
+  standalone?: boolean;
+  onSwitchMode?: (mode: 'login' | 'signup') => void;
 }
 
 function getFriendlyAuthErrorMessage(err: any): string {
@@ -75,6 +77,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   initialMode = 'signup',
   onSuccess,
+  standalone = false,
+  onSwitchMode,
 }) => {
   const { signInWithGoogle, loginWithEmail, signupWithEmail, resetPassword } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>(initialMode);
@@ -171,19 +175,52 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div
-        className="bg-white rounded-3xl w-full max-w-md p-6 sm:p-8 shadow-2xl relative border border-stone-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full transition-colors"
-          aria-label="Close"
+    <div
+      className={
+        standalone
+          ? 'min-h-screen bg-[#F8F6F2] flex flex-col font-sans'
+          : 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200'
+      }
+    >
+      {standalone && (
+        <header className="bg-[#0F2A44] text-white border-b border-[#1E4268]/50 px-4 sm:px-6 h-16 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex items-center gap-2.5 text-left hover:opacity-90 transition-opacity"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF6B5A] to-[#F2B544] flex items-center justify-center font-bold text-white shadow-md">
+              <Compass className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-heading font-extrabold text-base tracking-tight text-white">
+              FSBO <span className="text-[#FF6B5A]">Compass</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+          >
+            &larr; Back to Home
+          </button>
+        </header>
+      )}
+
+      <div className={standalone ? 'flex-1 flex items-center justify-center p-4 sm:p-6' : 'w-full flex items-center justify-center'}>
+        <div
+          className="bg-white rounded-3xl w-full max-w-md p-6 sm:p-8 shadow-2xl relative border border-stone-200"
+          onClick={(e) => e.stopPropagation()}
         >
-          <X className="w-5 h-5" />
-        </button>
+          {/* Close Button (modal only) */}
+          {!standalone && (
+            <button
+              onClick={onClose}
+              className="absolute top-5 right-5 p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
 
         {/* Header */}
         <div className="text-center mb-6">
@@ -360,9 +397,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <p>
                   Don't have an account?{' '}
                   <button
+                    type="button"
                     onClick={() => {
                       setError(null);
                       setMode('signup');
+                      onSwitchMode?.('signup');
                     }}
                     className="font-bold text-[#FF6B5A] hover:underline"
                   >
@@ -374,9 +413,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <p>
                   Already have an account?{' '}
                   <button
+                    type="button"
                     onClick={() => {
                       setError(null);
                       setMode('login');
+                      onSwitchMode?.('login');
                     }}
                     className="font-bold text-[#FF6B5A] hover:underline"
                   >
@@ -388,9 +429,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <p>
                   Remembered your password?{' '}
                   <button
+                    type="button"
                     onClick={() => {
                       setError(null);
                       setMode('login');
+                      onSwitchMode?.('login');
                     }}
                     className="font-bold text-[#FF6B5A] hover:underline"
                   >
@@ -401,6 +444,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           </>
         )}
+        </div>
       </div>
     </div>
   );

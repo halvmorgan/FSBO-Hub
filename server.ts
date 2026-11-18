@@ -1279,6 +1279,12 @@ app.post('/api/stripe/create-checkout-session', requireAuth, async (req: Authent
       cancel_url: `${appUrl}/pricing?canceled=true`,
       customer_email: verifiedEmail || undefined,
       client_reference_id: verifiedUid,
+      custom_text: {
+        submit: {
+          message:
+            'FSBO Compass is provided by Ecentury Appraisal Services. This is the name that will appear on your billing statement.',
+        },
+      },
       metadata: {
         userId: verifiedUid,
         userEmail: verifiedEmail || '',
@@ -1425,7 +1431,7 @@ app.post('/api/stripe/webhook', async (req: AuthenticatedRequest, res: Response)
             id: notifRef.id,
             uid: userId,
             title: 'Payment Successful!',
-            message: `Your account is now upgraded to ${planTitle}. Full access and AI credits are active.`,
+            message: `Your account is now upgraded to ${planTitle}. Full access and AI credits are active. FSBO Compass is provided by Ecentury Appraisal Services. This is the name that will appear on your billing statement.`,
             type: 'system',
             read: false,
             createdAt: new Date().toISOString(),
@@ -1495,6 +1501,12 @@ app.post('/api/stripe/webhook', async (req: AuthenticatedRequest, res: Response)
 
 app.post('/api/notifications/send-email', (req: Request, res: Response) => {
   const { toEmail, subject, type, payload } = req.body;
+  const billingStatementNote =
+    'FSBO Compass is provided by Ecentury Appraisal Services. This is the name that will appear on your billing statement.';
+  const enrichedPayload =
+    type === 'receipt' || type === 'welcome'
+      ? { ...(payload || {}), billingStatementNote }
+      : payload;
   console.log(`[EMAIL DISPATCH] To: ${toEmail} | Subj: ${subject} | Type: ${type}`);
   // In production, integration with SendGrid, Resend, or Firebase Trigger Email extension
   return res.json({
@@ -1502,6 +1514,7 @@ app.post('/api/notifications/send-email', (req: Request, res: Response) => {
     sentAt: new Date().toISOString(),
     to: toEmail,
     type,
+    payload: enrichedPayload,
   });
 });
 

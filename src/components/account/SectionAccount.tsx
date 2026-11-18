@@ -16,13 +16,21 @@ import JSZip from 'jszip';
 import { useAuth } from '../../contexts/AuthContext';
 import { getAllPhotosFromDB } from '../../lib/indexedDb';
 import { PlanType } from '../../types/saas';
+import { StripeBillingNotice, BILLING_STATEMENT_SENTENCE } from '../common/StripeBillingNotice';
 
 interface SectionAccountProps {
   onOpenPricing?: () => void;
   onOpenCompare?: () => void;
+  paymentSuccess?: boolean;
+  onDismissPaymentSuccess?: () => void;
 }
 
-export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing, onOpenCompare }) => {
+export const SectionAccount: React.FC<SectionAccountProps> = ({
+  onOpenPricing,
+  onOpenCompare,
+  paymentSuccess = false,
+  onDismissPaymentSuccess,
+}) => {
   const {
     currentUser,
     userProfile,
@@ -48,7 +56,7 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing, o
   });
 
   const [showPaymentSuccessNotice, setShowPaymentSuccessNotice] = useState(() => {
-    return new URLSearchParams(window.location.search).get('payment_success') === 'true';
+    return paymentSuccess || new URLSearchParams(window.location.search).get('payment_success') === 'true';
   });
 
   const planType: PlanType = userProfile?.plan || 'trial';
@@ -189,15 +197,23 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing, o
         </p>
       </div>
 
-      {showPaymentSuccessNotice && (
-        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Payment received! Your upgraded plan and AI credits have been activated.</span>
+      {(showPaymentSuccessNotice || paymentSuccess) && (
+        <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold">
+                Thank you for your purchase! Your upgraded plan and AI credits have been activated.
+              </span>
+              <p className="text-[11px] text-stone-600 dark:text-stone-300 mt-1">
+                {BILLING_STATEMENT_SENTENCE}
+              </p>
+            </div>
           </div>
           <button
             onClick={() => {
               setShowPaymentSuccessNotice(false);
+              onDismissPaymentSuccess?.();
               const url = new URL(window.location.href);
               url.searchParams.delete('payment_success');
               url.searchParams.delete('session_id');
@@ -366,6 +382,10 @@ export const SectionAccount: React.FC<SectionAccountProps> = ({ onOpenPricing, o
                 <>Access active through: {new Date(userProfile.planExpiresAt).toLocaleDateString()}</>
               )}
             </p>
+
+            {onOpenPricing && (
+              <StripeBillingNotice className="mt-2.5" />
+            )}
 
             {/* AI Credits Meter */}
             <div className="mt-6 pt-6 border-t border-stone-100 dark:border-stone-800">

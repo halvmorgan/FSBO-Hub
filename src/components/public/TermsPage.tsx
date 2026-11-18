@@ -15,7 +15,7 @@ export const TermsPage: React.FC<TermsPageProps> = ({
   onGoToDashboard,
   onLogout,
 }) => {
-  const { saasConfig, currentUser, logout } = useAuth();
+  const { saasConfig, currentUser, authReady, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-[#F8F6F2] text-[#0F2A44] flex flex-col font-sans">
@@ -27,14 +27,16 @@ export const TermsPage: React.FC<TermsPageProps> = ({
             className="inline-flex items-center gap-2 text-sm font-semibold text-[#0F2A44] hover:text-[#FF6B5A] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            {currentUser ? 'Back to Dashboard' : 'Back to Home'}
+            {!authReady ? 'Back' : currentUser ? 'Back to Dashboard' : 'Back to Home'}
           </button>
           <div className="flex items-center gap-2">
             <span className="font-heading font-bold text-lg text-[#0F2A44]">
               {saasConfig.brandName}
             </span>
           </div>
-          {currentUser ? (
+          {!authReady ? (
+            <div className="h-9 w-28 rounded-xl bg-stone-200/80 animate-pulse" aria-hidden="true" />
+          ) : currentUser ? (
             <div className="flex items-center gap-2">
               <button
                 type="button"

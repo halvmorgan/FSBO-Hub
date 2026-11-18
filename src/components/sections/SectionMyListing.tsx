@@ -41,10 +41,18 @@ import {
 import { doc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { getAppUrl } from '../../lib/appUrl';
+import {
+  sanitizeSavedDescription,
+  sanitizeSpecialNotes,
+  hasLegacySampleText,
+  isStockPhotoUrl,
+} from '../../lib/sampleScrub';
+import { STRIPE_CHECKOUT_NOTICE_TEXT } from '../common/StripeBillingNotice';
 
 interface SectionMyListingProps {
   property: PropertyProfile;
   photos: PhotoItem[];
+  ownerUid?: string;
   openHouses?: OpenHouseItem[];
   inquiriesCount?: number;
   isSellerView?: boolean;
@@ -59,6 +67,7 @@ interface SectionMyListingProps {
 export const SectionMyListing: React.FC<SectionMyListingProps> = ({
   property,
   photos,
+  ownerUid,
   openHouses = [],
   inquiriesCount = 0,
   isSellerView = true,
@@ -92,13 +101,20 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Listing ID determination
-  const listingId = property.id || property.publishedSlug || 'my-home';
-  const publicShareUrl = `${getAppUrl()}/listing/${listingId}`;
+  const listingId = property.id || ownerUid || property.publishedSlug || '';
+  const publicShareUrl = listingId ? `${getAppUrl()}/listing/${listingId}` : '';
 
-  // Photos handling
-  const validPhotos = photos.length > 0 ? photos : [];
+  // Photos handling (strictly user-uploaded, never stock)
+  const validPhotos = photos.filter((p) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl));
   const mainPhoto = validPhotos[0]?.dataUrl;
   const secondaryPhotos = validPhotos.slice(1, 5);
+
+  // Clean seller description & features (treats legacy sample text as empty)
+  const cleanedDescription = sanitizeSavedDescription(property.description);
+  const cleanedNotes = sanitizeSpecialNotes(property.specialNotes).join('\n\n');
+  const sellerDescriptionText = cleanedDescription || cleanedNotes;
+  const cleanFeatures = (property.features || []).filter((f) => !hasLegacySampleText(f));
+  const cleanUpgrades = (property.upgrades || []).filter((u) => !hasLegacySampleText(u.item));
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(publicShareUrl);
@@ -286,6 +302,11 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
               )}
             </div>
           </div>
+          {isTrial && onOpenPricing && (
+            <p className="max-w-7xl mx-auto mt-1.5 text-[10px] text-slate-300/80">
+              {STRIPE_CHECKOUT_NOTICE_TEXT}
+            </p>
+          )}
         </aside>
       )}
 
@@ -559,62 +580,71 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
               </div>
             </div>
 
-            {/* ABOUT THIS HOME */}
-            <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-sm space-y-5">
-              <h3 className="text-xl font-bold font-heading text-[#0F2A44] dark:text-white">
-                About This Home
-              </h3>
+            {/* ABOUT THIS HOME (shown to seller always; left off buyer view if empty) */}
+            {(isSellerView ||
+              Boolean(sellerDescriptionText) ||
+              cleanFeatures.length > 0 ||
+              cleanUpgrades.length > 0) && (
+              <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-sm space-y-5">
+                <h3 className="text-xl font-bold font-heading text-[#0F2A44] dark:text-white">
+                  About This Home
+                </h3>
 
-              <div className="prose dark:prose-invert max-w-none text-stone-700 dark:text-stone-300 text-sm leading-relaxed whitespace-pre-line">
-                {property.description ||
-                  property.specialNotes?.filter(Boolean).join('\n\n') ||
-                  'Welcome to this beautiful home for sale by owner. Turnkey condition with spacious living areas, great natural daylight, and a welcoming neighborhood setting. Contact the owner today to schedule your private tour or ask any questions.'}
+                {sellerDescriptionText ? (
+                  <div className="prose dark:prose-invert max-w-none text-stone-700 dark:text-stone-300 text-sm leading-relaxed whitespace-pre-line">
+                    {sellerDescriptionText}
+                  </div>
+                ) : isSellerView ? (
+                  <p className="text-sm italic text-stone-400 dark:text-stone-500">
+                    No description yet
+                  </p>
+                ) : null}
+
+                {/* Key Features Tags */}
+                {cleanFeatures.length > 0 && (
+                  <div className={sellerDescriptionText || isSellerView ? 'pt-4 border-t border-stone-100 dark:border-stone-800' : ''}>
+                    <span className="text-xs font-bold uppercase tracking-wider text-stone-400 block mb-3">
+                      Features & Amenities
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {cleanFeatures.map((feature, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-stone-100 dark:bg-stone-800 text-[#0F2A44] dark:text-stone-200"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>{feature}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Upgrades */}
+                {cleanUpgrades.length > 0 && (
+                  <div className="pt-4 border-t border-stone-100 dark:border-stone-800">
+                    <span className="text-xs font-bold uppercase tracking-wider text-stone-400 block mb-3">
+                      Recent Improvements & Upgrades
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {cleanUpgrades.map((u) => (
+                        <div
+                          key={u.id}
+                          className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/60 dark:border-stone-700/60 flex items-center justify-between text-xs"
+                        >
+                          <span className="font-semibold text-stone-800 dark:text-stone-200">
+                            {u.item}
+                          </span>
+                          <span className="font-bold text-[#FF6B5A] bg-[#FF6B5A]/10 px-2 py-0.5 rounded">
+                            {u.year}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-
-              {/* Key Features Tags */}
-              {property.features && property.features.length > 0 && (
-                <div className="pt-4 border-t border-stone-100 dark:border-stone-800">
-                  <span className="text-xs font-bold uppercase tracking-wider text-stone-400 block mb-3">
-                    Features & Amenities
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    {property.features.map((feature, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-stone-100 dark:bg-stone-800 text-[#0F2A44] dark:text-stone-200"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>{feature}</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Recent Upgrades */}
-              {property.upgrades && property.upgrades.length > 0 && (
-                <div className="pt-4 border-t border-stone-100 dark:border-stone-800">
-                  <span className="text-xs font-bold uppercase tracking-wider text-stone-400 block mb-3">
-                    Recent Improvements & Upgrades
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {property.upgrades.map((u) => (
-                      <div
-                        key={u.id}
-                        className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/60 dark:border-stone-700/60 flex items-center justify-between text-xs"
-                      >
-                        <span className="font-semibold text-stone-800 dark:text-stone-200">
-                          {u.item}
-                        </span>
-                        <span className="font-bold text-[#FF6B5A] bg-[#FF6B5A]/10 px-2 py-0.5 rounded">
-                          {u.year}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
 
             {/* PROPERTY DETAILS: Interior, Exterior, Other */}
             <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-sm space-y-6">

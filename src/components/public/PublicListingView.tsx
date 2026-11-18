@@ -5,6 +5,12 @@ import { PropertyProfile, PhotoItem, OpenHouseItem } from '../../types';
 import { SectionMyListing } from '../sections/SectionMyListing';
 import { Compass, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import {
+  sanitizeSavedDescription,
+  sanitizeSpecialNotes,
+  hasLegacySampleText,
+  isStockPhotoUrl,
+} from '../../lib/sampleScrub';
 
 interface PublicListingViewProps {
   listingId: string;
@@ -19,7 +25,7 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
   onGoToDashboard,
   onLogout,
 }) => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, authReady, logout } = useAuth();
   const [property, setProperty] = useState<PropertyProfile | null>(null);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [openHouses, setOpenHouses] = useState<OpenHouseItem[]>([]);
@@ -65,16 +71,24 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
             garage: '',
             basement: '',
             roof: '',
-            upgrades: [],
-            specialNotes: [],
-            features: [],
             ...data,
+            description: sanitizeSavedDescription(data.description),
+            specialNotes: (() => {
+              const cleaned = sanitizeSpecialNotes(data.specialNotes);
+              return [cleaned[0] || '', cleaned[1] || '', cleaned[2] || ''] as [string, string, string];
+            })(),
+            features: Array.isArray(data.features)
+              ? data.features.filter((f: any) => !hasLegacySampleText(String(f)))
+              : [],
+            upgrades: Array.isArray(data.upgrades)
+              ? data.upgrades.filter((u: any) => !hasLegacySampleText(String(u?.item || '')))
+              : [],
             id: snap.id,
           };
           setProperty(loadedProp);
 
           if (Array.isArray(data.photos)) {
-            setPhotos(data.photos);
+            setPhotos(data.photos.filter((p: any) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl)));
           }
           if (Array.isArray(data.openHouses)) {
             setOpenHouses(data.openHouses);
@@ -112,7 +126,21 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
             if (localProp) {
               const parsed = JSON.parse(localProp);
               if (parsed.id === listingId || listingId === currentUser.uid) {
-                setProperty(parsed);
+                const cleanedNotes = sanitizeSpecialNotes(parsed.specialNotes);
+                setProperty({
+                  ...parsed,
+                  description: sanitizeSavedDescription(parsed.description),
+                  specialNotes: [cleanedNotes[0] || '', cleanedNotes[1] || '', cleanedNotes[2] || ''],
+                  features: Array.isArray(parsed.features)
+                    ? parsed.features.filter((f: any) => !hasLegacySampleText(String(f)))
+                    : [],
+                  upgrades: Array.isArray(parsed.upgrades)
+                    ? parsed.upgrades.filter((u: any) => !hasLegacySampleText(String(u?.item || '')))
+                    : [],
+                });
+                if (Array.isArray(parsed.photos)) {
+                  setPhotos(parsed.photos.filter((p: any) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl)));
+                }
                 setLoading(false);
                 return;
               }
@@ -127,7 +155,21 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
           if (localProp) {
             const parsed = JSON.parse(localProp);
             if (parsed.id === listingId || listingId === currentUser.uid) {
-              setProperty(parsed);
+              const cleanedNotes = sanitizeSpecialNotes(parsed.specialNotes);
+              setProperty({
+                ...parsed,
+                description: sanitizeSavedDescription(parsed.description),
+                specialNotes: [cleanedNotes[0] || '', cleanedNotes[1] || '', cleanedNotes[2] || ''],
+                features: Array.isArray(parsed.features)
+                  ? parsed.features.filter((f: any) => !hasLegacySampleText(String(f)))
+                  : [],
+                upgrades: Array.isArray(parsed.upgrades)
+                  ? parsed.upgrades.filter((u: any) => !hasLegacySampleText(String(u?.item || '')))
+                  : [],
+              });
+              if (Array.isArray(parsed.photos)) {
+                setPhotos(parsed.photos.filter((p: any) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl)));
+              }
               setLoading(false);
               return;
             }
@@ -207,7 +249,7 @@ export const PublicListingView: React.FC<PublicListingViewProps> = ({
           <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
             For Sale By Owner
           </span>
-          {currentUser && (
+          {authReady && currentUser && (
             <>
               <button
                 type="button"

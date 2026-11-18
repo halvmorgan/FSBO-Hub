@@ -25,6 +25,8 @@ import { db } from '../../lib/firebase';
 import { PublicSiteDoc } from '../../types/saas';
 import { incrementFirestoreReadCount } from '../../lib/firestoreTracker';
 import { useAuth } from '../../contexts/AuthContext';
+import { hasLegacySampleText, isStockPhotoUrl } from '../../lib/sampleScrub';
+import { StripeBillingNotice } from '../common/StripeBillingNotice';
 
 interface PublicPropertyViewProps {
   slug: string;
@@ -48,7 +50,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
   onGoToDashboard,
   onLogout,
 }) => {
-  const { currentUser, userProperties, logout } = useAuth();
+  const { currentUser, authReady, userProperties, logout } = useAuth();
   const [property, setProperty] = useState<PublicSiteDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -244,6 +246,9 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
                 </button>
               )}
             </div>
+            {onNavigatePricing && (
+              <StripeBillingNotice className="max-w-md mt-4 text-center" />
+            )}
           </>
         ) : (
           <>
@@ -265,11 +270,15 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
     );
   }
 
-  const allPhotos = property.photos && property.photos.length > 0
-    ? property.photos
-    : property.coverPhotoUrl
-    ? [{ id: 'cover', url: property.coverPhotoUrl, caption: 'Front Exterior', isCover: true }]
-    : [];
+  const rawPhotos =
+    property.photos && property.photos.length > 0
+      ? property.photos
+      : property.coverPhotoUrl
+      ? [{ id: 'cover', url: property.coverPhotoUrl, caption: 'Front Exterior', isCover: true }]
+      : [];
+  const allPhotos = rawPhotos.filter((p) => p?.url && !isStockPhotoUrl(p.url));
+  const cleanFeatures = (property.features || []).filter((f) => !hasLegacySampleText(f));
+  const cleanUpgrades = (property.upgrades || []).filter((u) => !hasLegacySampleText(u?.item));
 
   return (
     <div className="min-h-screen bg-[#F8F6F2] text-[#0F2A44] font-sans">
@@ -305,7 +314,7 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
             >
               Schedule Tour
             </a>
-            {currentUser && (
+            {authReady && currentUser && (
               <>
                 {onGoToDashboard && (
                   <button
@@ -515,14 +524,14 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
             </div>
 
             {/* Features & Highlights */}
-            {property.features && property.features.length > 0 && (
+            {cleanFeatures.length > 0 && (
               <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-stone-200">
                 <h3 className="text-lg font-heading font-bold text-[#0F2A44] mb-4 flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-[#FF6B5A]" />
                   Property Highlights & Amenities
                 </h3>
                 <div className="flex flex-wrap gap-2.5">
-                  {property.features.map((feat, idx) => (
+                  {cleanFeatures.map((feat, idx) => (
                     <span
                       key={idx}
                       className="px-3.5 py-1.5 bg-stone-100 text-[#0F2A44] rounded-xl text-xs font-medium"
@@ -535,14 +544,14 @@ export const PublicPropertyView: React.FC<PublicPropertyViewProps> = ({
             )}
 
             {/* Recent Upgrades */}
-            {property.upgrades && property.upgrades.length > 0 && (
+            {cleanUpgrades.length > 0 && (
               <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-stone-200">
                 <h3 className="text-lg font-heading font-bold text-[#0F2A44] mb-4 flex items-center gap-2">
                   <Hammer className="w-5 h-5 text-[#FF6B5A]" />
                   Recent Upgrades & Improvements
                 </h3>
                 <div className="divide-y divide-stone-100">
-                  {property.upgrades.map((upg) => (
+                  {cleanUpgrades.map((upg) => (
                     <div key={upg.id} className="py-2.5 flex items-center justify-between text-xs sm:text-sm">
                       <span className="font-medium text-[#0F2A44]">{upg.item}</span>
                       <span className="text-stone-500 font-mono bg-stone-100 px-2 py-0.5 rounded-md">

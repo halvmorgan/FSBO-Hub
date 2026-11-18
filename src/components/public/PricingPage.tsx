@@ -9,6 +9,7 @@ import {
   Lock,
   Sparkles,
 } from 'lucide-react';
+import { StripeBillingNotice } from '../common/StripeBillingNotice';
 
 interface PricingPageProps {
   saasConfig: SaasConfig;
@@ -29,10 +30,12 @@ export const PricingPage: React.FC<PricingPageProps> = ({
   onGoToDashboard,
   onLogout,
 }) => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, authReady, refreshAuthState, logout } = useAuth();
   const plans = saasConfig.plans;
 
   useEffect(() => {
+    void refreshAuthState();
+
     const scrollToCompare = () => {
       if (typeof window !== 'undefined' && window.location.hash === '#compare') {
         const el = document.getElementById('compare');
@@ -70,8 +73,10 @@ export const PricingPage: React.FC<PricingPageProps> = ({
             </div>
           </button>
 
-          <div className="flex items-center gap-3">
-            {currentUser ? (
+          <div className="flex items-center gap-3 min-w-[140px] justify-end">
+            {!authReady ? (
+              <div className="h-8 w-32 rounded-xl bg-white/10 animate-pulse" aria-hidden="true" />
+            ) : currentUser ? (
               <>
                 <button
                   type="button"
@@ -339,6 +344,8 @@ export const PricingPage: React.FC<PricingPageProps> = ({
           )}
         </div>
 
+        <StripeBillingNotice className="text-center max-w-2xl mx-auto" />
+
         {/* Compare Plans Section */}
         <section id="compare" className="pt-10 scroll-mt-12 space-y-6">
           <div className="text-center space-y-2">
@@ -596,6 +603,8 @@ export const PricingPage: React.FC<PricingPageProps> = ({
               </tbody>
             </table>
           </div>
+
+          <StripeBillingNotice className="text-center max-w-2xl mx-auto" />
         </section>
       </main>
     </div>

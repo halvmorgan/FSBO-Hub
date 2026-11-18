@@ -7,6 +7,7 @@ import { US_STATES, detectStateFromAddress } from '../../lib/stateDisclosures';
 interface OnboardingWizardProps {
   property: PropertyProfile;
   photos: PhotoItem[];
+  ownerUid?: string;
   isEditing?: boolean;
   onComplete: (updatedProperty: PropertyProfile, updatedPhotos: PhotoItem[]) => Promise<void> | void;
   onClose: () => void;
@@ -15,6 +16,7 @@ interface OnboardingWizardProps {
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   property,
   photos,
+  ownerUid,
   isEditing = false,
   onComplete,
   onClose,
@@ -46,7 +48,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           { ...newPhoto, isCover: prev.length === 0, order: prev.length },
         ]);
         try {
-          await savePhotoToDB(newPhoto.id, dataUrl, { caption: newPhoto.caption });
+          await savePhotoToDB(newPhoto.id, dataUrl, {
+            caption: newPhoto.caption,
+            ...(ownerUid ? { ownerUid } : {}),
+          });
         } catch (dbErr) {
           console.warn('Local photo backup failed (continuing):', dbErr);
         }
@@ -323,7 +328,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     type="number"
                     value={formData.sqft || ''}
                     onChange={(e) => setFormData({ ...formData, sqft: parseInt(e.target.value) || 0 })}
-                    placeholder="2450"
+                    placeholder="e.g. 1850"
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#FF6B5A] focus:outline-none"
                   />
                 </div>

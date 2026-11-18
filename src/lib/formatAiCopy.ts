@@ -41,7 +41,7 @@ export function formatLabel(key: string): string {
  * "Price: $435,000"
  * "Beds: 4"
  * "Baths: 2 Full, 1 Half"
- * "Sq Ft: 2,450"
+ * "Sq Ft: 1,850"
  * "Year Built: 1998"
  * "Taxes: $4,620/yr"
  * "School District: ..."

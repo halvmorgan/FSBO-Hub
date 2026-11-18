@@ -7,6 +7,7 @@ import {
 } from '../../types';
 import { WhyThisMatters } from '../common/WhyThisMatters';
 import { Tooltip } from '../common/Tooltip';
+import { StripeBillingNotice } from '../common/StripeBillingNotice';
 import {
   formatKeyFacts,
   formatUpgradesList,
@@ -219,20 +220,23 @@ export const SectionSites: React.FC<SectionSitesProps> = ({
       />
 
       {upgradePrompt && (
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <span className="font-semibold">{upgradePrompt}</span>
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <span className="font-semibold">{upgradePrompt}</span>
+            </div>
+            {onOpenPricing && (
+              <button
+                type="button"
+                onClick={onOpenPricing}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-sm shrink-0"
+              >
+                Upgrade Plan
+              </button>
+            )}
           </div>
-          {onOpenPricing && (
-            <button
-              type="button"
-              onClick={onOpenPricing}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-sm shrink-0"
-            >
-              Upgrade Plan
-            </button>
-          )}
+          <StripeBillingNotice />
         </div>
       )}
 

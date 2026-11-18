@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PropertyProfile, PhotoItem, ActiveTab } from '../../types';
 import { WhyThisMatters } from '../common/WhyThisMatters';
+import { StripeBillingNotice } from '../common/StripeBillingNotice';
 import {
   savePhotoToDB,
   deletePhotoFromDB,
@@ -51,7 +52,7 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
   onNavigate,
   onOpenPricing,
 }) => {
-  const { userProfile, saasConfig, syncAiCredits } = useAuth();
+  const { currentUser, userProfile, saasConfig, syncAiCredits } = useAuth();
   const planType = userProfile?.plan || 'trial';
   const creditsUsed = userProfile?.aiCreditsUsed || 0;
   const maxCredits =
@@ -156,7 +157,11 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
           };
           // Local backup copy -- never let a failure here block the upload
           try {
-            await savePhotoToDB(photo.id, dataUrl, { caption: photo.caption, isCover: photo.isCover });
+            await savePhotoToDB(photo.id, dataUrl, {
+              caption: photo.caption,
+              isCover: photo.isCover,
+              ...(currentUser?.uid ? { ownerUid: currentUser.uid } : {}),
+            });
           } catch (dbErr) {
             console.warn('Local photo backup failed (continuing):', dbErr);
           }
@@ -208,7 +213,11 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
     }));
     onUpdatePhotos(updated);
     for (const p of updated) {
-      await savePhotoToDB(p.id, p.dataUrl, { caption: p.caption, isCover: p.isCover });
+      await savePhotoToDB(p.id, p.dataUrl, {
+        caption: p.caption,
+        isCover: p.isCover,
+        ...(currentUser?.uid ? { ownerUid: currentUser.uid } : {}),
+      });
     }
   };
 
@@ -344,20 +353,23 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
       />
 
       {upgradePrompt && (
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
-          <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <span className="font-semibold">{upgradePrompt}</span>
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 space-y-2 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <span className="font-semibold">{upgradePrompt}</span>
+            </div>
+            {onOpenPricing && (
+              <button
+                type="button"
+                onClick={onOpenPricing}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-sm shrink-0"
+              >
+                Upgrade Plan
+              </button>
+            )}
           </div>
-          {onOpenPricing && (
-            <button
-              type="button"
-              onClick={onOpenPricing}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-sm shrink-0"
-            >
-              Upgrade Plan
-            </button>
-          )}
+          <StripeBillingNotice />
         </div>
       )}
 
@@ -408,12 +420,23 @@ export const SectionPhotos: React.FC<SectionPhotosProps> = ({
 
         {/* Gallery Cards */}
         {photos.length === 0 ? (
-          <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+          <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col items-center">
             <Camera className="w-10 h-10 text-slate-300 mx-auto mb-2" />
             <h4 className="text-sm font-bold text-[#0F2A44] dark:text-white">No photos uploaded yet</h4>
             <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-              Click "Upload Photos" above, or drag photos onto this box, to add shots of the front, kitchen, living room, and master bedroom.
+              Add your own photos of the exterior, kitchen, living room, and backyard, or drag images onto this box.
             </p>
+            <label className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] cursor-pointer shadow-md shadow-[#FF6B5A]/25 transition-all">
+              <Upload className="w-4 h-4" />
+              <span>Add your photos</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleUploadPhotos}
+                className="hidden"
+              />
+            </label>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

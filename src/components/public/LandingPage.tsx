@@ -47,7 +47,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   loggedOutMessage,
   onDismissLoggedOut,
 }) => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, authReady, logout } = useAuth();
   const faqs = [
     {
       q: 'How much money can I actually save selling For Sale By Owner (FSBO)?',
@@ -105,7 +105,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             >
               Demo Preview
             </button>
-            {currentUser ? (
+            {!authReady ? (
+              <div className="h-8 w-36 rounded-xl bg-white/10 animate-pulse" aria-hidden="true" />
+            ) : currentUser ? (
               <>
                 <button
                   type="button"

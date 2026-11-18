@@ -9,6 +9,7 @@ import {
 } from '../../types';
 import { WhyThisMatters } from '../common/WhyThisMatters';
 import { Tooltip } from '../common/Tooltip';
+import { StripeBillingNotice } from '../common/StripeBillingNotice';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import {
@@ -44,6 +45,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { PublicSiteDoc } from '../../types/saas';
 import { incrementFirestoreReadCount } from '../../lib/firestoreTracker';
 import { getPropertyWebsiteUrl } from '../../lib/appUrl';
+import { sanitizeSavedDescription, isStockPhotoUrl } from '../../lib/sampleScrub';
 
 interface SectionWebsiteProps {
   property: PropertyProfile;
@@ -141,7 +143,10 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
       .catch((err) => console.error('QR error', err));
   }, [hostedSiteUrl, publishedDoc, slug]);
 
-  const coverPhoto = photos.find((p) => p.isCover) || photos[0];
+  const validPhotos = photos.filter((p) => p?.dataUrl && !isStockPhotoUrl(p.dataUrl));
+  const coverPhoto = validPhotos.find((p) => p.isCover) || validPhotos[0];
+  const secondaryFlyerPhotos = validPhotos.filter((p) => p.id !== coverPhoto?.id).slice(0, 4);
+  const flyerDescription = sanitizeSavedDescription(property.description);
   const isPriceReduced = property.originalPrice && property.price < property.originalPrice;
 
   // Handle Cloud Publishing
@@ -335,14 +340,15 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
   };
 
   return (
-    <div className="space-y-6 font-sans">
-      <WhyThisMatters
-        tip="A dedicated property website makes your home look like a multimillion-dollar listing. You can put the QR code directly on your front yard sign so drive-by buyers view photos and request showings on their phone."
-        nextLabel="Showings & Open Houses"
-        onNext={() => onNavigate('showings')}
-      />
+    <div className="space-y-6 font-sans print:space-y-0">
+      <div className="print:hidden no-print space-y-6">
+        <WhyThisMatters
+          tip="A dedicated property website makes your home look like a multimillion-dollar listing. You can put the QR code directly on your front yard sign so drive-by buyers view photos and request showings on their phone."
+          nextLabel="Showings & Open Houses"
+          onNext={() => onNavigate('showings')}
+        />
 
-      {/* Cloud Publishing Gating & Action Box */}
+        {/* Cloud Publishing Gating & Action Box */}
       <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 shadow-sm space-y-4">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div>
@@ -377,17 +383,20 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
                 )}
               </button>
             ) : (
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-amber-600 font-semibold flex items-center gap-1">
-                  <Lock className="w-3.5 h-3.5" /> Plan Upgrade Required
-                </span>
-                <button
-                  type="button"
-                  onClick={onOpenPricing}
-                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-[#FF6B5A] text-white rounded-xl text-xs font-bold shadow-md transition-all"
-                >
-                  Unlock Website with {saasConfig.plans?.per_listing?.priceDisplay || '$149'} Plan
-                </button>
+              <div className="flex flex-col items-start lg:items-end gap-1.5 max-w-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-amber-600 font-semibold flex items-center gap-1">
+                    <Lock className="w-3.5 h-3.5" /> Plan Upgrade Required
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onOpenPricing}
+                    className="px-4 py-2 bg-gradient-to-r from-amber-500 to-[#FF6B5A] text-white rounded-xl text-xs font-bold shadow-md transition-all"
+                  >
+                    Unlock Website with {saasConfig.plans?.per_listing?.priceDisplay || '$149'} Plan
+                  </button>
+                </div>
+                <StripeBillingNotice className="lg:text-right" />
               </div>
             )}
           </div>
@@ -532,7 +541,7 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
       {/* ============================================================ */}
       {/* LIVE PREVIEW CONTAINER */}
       {/* ============================================================ */}
-      <div className="rounded-3xl border border-stone-300 dark:border-stone-700 overflow-hidden shadow-2xl bg-[#F8F6F2] dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100">
+      <div className="print:hidden no-print rounded-3xl border border-stone-300 dark:border-stone-700 overflow-hidden shadow-2xl bg-[#F8F6F2] dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100">
         {/* Preview Chrome Bar */}
         <div className="bg-[#0F2A44] text-white px-4 py-2.5 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
@@ -736,7 +745,7 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
       {selectedGalleryPhoto && (
         <div
           onClick={() => setSelectedGalleryPhoto(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          className="print:hidden no-print fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
         >
           <div className="relative max-w-4xl max-h-[85vh] rounded-3xl overflow-hidden shadow-2xl">
             <img
@@ -747,83 +756,126 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
           </div>
         </div>
       )}
+      </div>
 
-      {/* PRINT-ONLY YARD FLYER */}
-      <div className="hidden print:block fixed inset-0 bg-white text-black p-8 z-50">
-        <div className="border-4 border-[#0F2A44] p-6 rounded-3xl flex flex-col justify-between h-full">
-          <div>
-            <div className="flex items-center justify-between border-b-2 border-[#0F2A44] pb-4 mb-4">
-              <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-[#FF6B5A]">
-                  FOR SALE BY OWNER
-                </span>
-                <h1 className="text-3xl font-extrabold text-[#0F2A44]">{property.address}</h1>
-                <p className="text-sm font-semibold text-stone-600">
-                  {property.city}, {property.state} {property.zip}
+      {/* PRINT-ONLY YARD FLYER (Strictly sized for 1 US Letter portrait page) */}
+      <div className="hidden print:block print-flyer-sheet bg-white text-black">
+        <div className="print-flyer-card border-4 border-[#0F2A44] rounded-2xl flex flex-col gap-3">
+          {/* Flyer Header */}
+          <div className="flyer-header flex items-start justify-between border-b-2 border-[#0F2A44] pb-2.5">
+            <div className="min-w-0 pr-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF6B5A] block">
+                FOR SALE BY OWNER
+              </span>
+              <h1 className="text-2xl font-extrabold text-[#0F2A44] leading-tight">
+                {property.address || 'Home For Sale By Owner'}
+              </h1>
+              {(property.city || property.state || property.zip) && (
+                <p className="text-xs font-semibold text-stone-600">
+                  {[property.city, property.state].filter(Boolean).join(', ')} {property.zip}
                 </p>
-              </div>
-              <div className="text-right">
-                <span className="text-xs text-stone-500 block">Offered At:</span>
-                <span className="text-3xl font-black text-[#0F2A44]">${property.price.toLocaleString()}</span>
-              </div>
+              )}
             </div>
-
-            {coverPhoto && (
-              <div className="aspect-[16/9] rounded-2xl overflow-hidden mb-4 border border-stone-300">
-                <img src={coverPhoto.dataUrl} alt="" className="w-full h-full object-cover" />
-              </div>
-            )}
-
-            <div className="grid grid-cols-4 gap-3 text-center mb-4">
-              <div className="p-3 bg-stone-100 rounded-xl">
-                <span className="text-xs text-stone-500 block">Bedrooms</span>
-                <span className="text-xl font-bold">{property.beds}</span>
-              </div>
-              <div className="p-3 bg-stone-100 rounded-xl">
-                <span className="text-xs text-stone-500 block">Bathrooms</span>
-                <span className="text-xl font-bold">{property.bathsFull}.{property.bathsHalf}</span>
-              </div>
-              <div className="p-3 bg-stone-100 rounded-xl">
-                <span className="text-xs text-stone-500 block">Sq Footage</span>
-                <span className="text-xl font-bold">{property.sqft.toLocaleString()}</span>
-              </div>
-              <div className="p-3 bg-stone-100 rounded-xl">
-                <span className="text-xs text-stone-500 block">Year Built</span>
-                <span className="text-xl font-bold">{property.yearBuilt}</span>
-              </div>
+            <div className="text-right shrink-0">
+              <span className="text-[10px] text-stone-500 block">Offered At:</span>
+              <span className="text-2xl font-black text-[#0F2A44]">
+                {property.price > 0 ? `$${property.price.toLocaleString()}` : 'Price Coming Soon'}
+              </span>
             </div>
           </div>
 
-          <div className="border-t-2 border-[#0F2A44] pt-4 flex items-center justify-between">
-            <div>
+          {/* Main Photo + Optional Compact Sub-Row */}
+          {coverPhoto && (
+            <div className="space-y-1.5">
+              <div className="rounded-xl overflow-hidden border border-stone-300">
+                <img
+                  src={coverPhoto.dataUrl}
+                  alt={property.address || 'Property Cover'}
+                  className="print-flyer-main-photo w-full object-cover"
+                />
+              </div>
+              {secondaryFlyerPhotos.length > 0 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {secondaryFlyerPhotos.map((p) => (
+                    <div key={p.id} className="rounded-lg overflow-hidden border border-stone-200">
+                      <img
+                        src={p.dataUrl}
+                        alt={p.caption || ''}
+                        className="print-flyer-thumb w-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Core Specs Grid */}
+          <div className="grid grid-cols-4 gap-2 text-center">
+            <div className="p-2 bg-stone-100 rounded-lg">
+              <span className="text-[10px] text-stone-500 block">Bedrooms</span>
+              <span className="text-lg font-bold text-[#0F2A44]">{property.beds || 0}</span>
+            </div>
+            <div className="p-2 bg-stone-100 rounded-lg">
+              <span className="text-[10px] text-stone-500 block">Bathrooms</span>
+              <span className="text-lg font-bold text-[#0F2A44]">
+                {property.bathsFull || 0}
+                {property.bathsHalf ? `.${property.bathsHalf}` : ''}
+              </span>
+            </div>
+            <div className="p-2 bg-stone-100 rounded-lg">
+              <span className="text-[10px] text-stone-500 block">Sq Footage</span>
+              <span className="text-lg font-bold text-[#0F2A44]">
+                {property.sqft > 0 ? property.sqft.toLocaleString() : '—'}
+              </span>
+            </div>
+            <div className="p-2 bg-stone-100 rounded-lg">
+              <span className="text-[10px] text-stone-500 block">Year Built</span>
+              <span className="text-lg font-bold text-[#0F2A44]">
+                {property.yearBuilt || '—'}
+              </span>
+            </div>
+          </div>
+
+          {/* Seller Description Summary (omitted cleanly if empty) */}
+          {flyerDescription && (
+            <div className="text-[11px] leading-snug text-stone-700 line-clamp-3 border-t border-stone-200 pt-2">
+              {flyerDescription}
+            </div>
+          )}
+
+          {/* Seller Contact + QR Code */}
+          <div className="border-t-2 border-[#0F2A44] pt-2.5 flex items-center justify-between gap-4">
+            <div className="min-w-0">
               {settings.sellerName.trim() && (
-                <div className="text-base font-bold text-[#0F2A44]">
+                <div className="text-sm font-bold text-[#0F2A44]">
                   Direct Contact: {settings.sellerName.trim()}
                 </div>
               )}
               {settings.sellerPhone.trim() && (
-                <div className="text-sm font-extrabold text-[#FF6B5A]">
+                <div className="text-xs font-extrabold text-[#FF6B5A]">
                   Call / Text: {settings.sellerPhone.trim()}
                 </div>
               )}
               {settings.sellerEmail.trim() && (
-                <div className="text-xs text-stone-500">{settings.sellerEmail.trim()}</div>
+                <div className="text-[11px] text-stone-600">{settings.sellerEmail.trim()}</div>
               )}
             </div>
 
             {qrCodeDataUrl && (
-              <div className="flex items-center gap-2">
-                <div className="text-right text-[10px] font-bold">
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="text-right text-[9px] font-bold leading-tight text-[#0F2A44]">
                   SCAN FOR FULL
                   <br />
                   PHOTO TOUR
                 </div>
-                <img src={qrCodeDataUrl} alt="QR" className="w-16 h-16" />
+                <img src={qrCodeDataUrl} alt="QR" className="w-14 h-14" />
               </div>
             )}
           </div>
 
-          <div className="mt-3 pt-2 border-t border-stone-200 flex items-center justify-between text-[10px] text-stone-500">
+          {/* Footer */}
+          <div className="flyer-footer pt-1.5 border-t border-stone-200 flex items-center justify-between text-[9px] text-stone-500">
             <span className="font-semibold text-stone-700">Powered by FSBO Compass</span>
             <span>Equal Housing Opportunity</span>
           </div>
