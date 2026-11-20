@@ -699,12 +699,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Update current property
   const updateCurrentProperty = async (updated: PropertyProfile) => {
-    if (!currentUser || !activePropertyId) return;
-    const propRef = doc(db, 'users', currentUser.uid, 'properties', activePropertyId);
-    await updateDoc(propRef, {
+    if (!currentUser) return;
+    const targetPropId = activePropertyId || updated.id || userProperties[0]?.id;
+    if (!targetPropId) {
+      throw new Error('No active property record found to save.');
+    }
+    const nowIso = new Date().toISOString();
+    const payload = {
       ...updated,
-      updatedAt: new Date().toISOString(),
+      id: targetPropId,
+      ownerUid: currentUser.uid,
+      updatedAt: nowIso,
+    };
+    const propRef = doc(db, 'users', currentUser.uid, 'properties', targetPropId);
+    await setDoc(propRef, payload, { merge: true });
+    setUserProperties((prev) => {
+      const exists = prev.some((p) => p.id === targetPropId);
+      if (!exists) return [payload as PropertyProfile, ...prev];
+      return prev.map((p) => (p.id === targetPropId ? { ...p, ...payload } : p));
     });
+    if (!activePropertyId) {
+      setActivePropertyIdState(targetPropId);
+    }
   };
 
   // Delete current property

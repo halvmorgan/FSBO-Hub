@@ -963,17 +963,100 @@ Respond in JSON only.`;
 
     const { response, modelUsed } = await generateContentWithRetryAndFallback({
       contents: prompt,
+      mainModel: 'gemini-3.1-flash-lite',
+      skipFallback: true,
+      maxRetries: 3,
+      callTimeoutMs: 20000,
       config: {
         responseMimeType: 'application/json',
       },
     });
 
-    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
-    const parsed = parseAiJson(response.text || '{}', {});
+    const rawAiText = String(response?.text || '').trim();
+    const rawParsed = parseAiJson(rawAiText, null);
+
+    // Unwrap arrays or nested wrapper objects if Gemini returned [{...}] or { listing: {...} }
+    let normalizedObj: Record<string, any> = {};
+    if (Array.isArray(rawParsed)) {
+      const firstObj = rawParsed.find((item) => item && typeof item === 'object');
+      normalizedObj = firstObj && typeof firstObj === 'object' ? { ...firstObj } : {};
+    } else if (rawParsed && typeof rawParsed === 'object') {
+      normalizedObj = { ...rawParsed };
+      for (const nestedKey of ['listing', 'listingCopy', 'data', 'result', 'output', 'response']) {
+        const nestedVal = normalizedObj[nestedKey];
+        if (nestedVal && typeof nestedVal === 'object' && !Array.isArray(nestedVal)) {
+          normalizedObj = { ...normalizedObj, ...nestedVal };
+          break;
+        }
+      }
+    }
+
+    const extractStringField = (val: any): string => {
+      if (val === undefined || val === null) return '';
+      if (typeof val === 'string') return val.trim();
+      if (Array.isArray(val)) return val.map((x) => extractStringField(x)).filter(Boolean).join('\n');
+      if (typeof val === 'object') {
+        return extractStringField(val.text ?? val.content ?? val.description ?? val.body ?? '');
+      }
+      return String(val).trim();
+    };
+
+    const pickField = (keys: string[]): string => {
+      for (const k of keys) {
+        const v = extractStringField(normalizedObj[k]);
+        if (v) return v;
+      }
+      return '';
+    };
+
+    // Fallback to cleaned plain prose text if Gemini answered outside JSON
+    let resolvedFullDescription = pickField([
+      'fullDescription',
+      'description',
+      'listingDescription',
+      'mlsDescription',
+      'propertyDescription',
+      'full_description',
+      'listing_description',
+      'about',
+      'aboutThisHome',
+      'body',
+      'text',
+      'copy',
+      'content',
+    ]);
+
+    if (!resolvedFullDescription && rawAiText && !rawAiText.startsWith('{') && !rawAiText.startsWith('[')) {
+      resolvedFullDescription = rawAiText
+        .replace(/^```(?:json|text|markdown)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+    }
+
+    if (!resolvedFullDescription) {
+      console.error('[listing-copy] Gemini returned unusable/empty copy (no credit deducted). Raw text preview:', rawAiText.slice(0, 300));
+      return res.status(502).json({
+        error: 'Could not generate a listing description — no AI credit was used. Please try again.',
+        message: 'Could not generate a listing description — no AI credit was used. Please try again.',
+      });
+    }
+
+    const parsed: Record<string, any> = {
+      ...normalizedObj,
+      headline:
+        pickField(['headline', 'title', 'listingHeadline']) ||
+        (property?.address ? `${property.address} - For Sale By Owner` : 'For Sale By Owner Listing'),
+      fullDescription: resolvedFullDescription,
+      description: resolvedFullDescription,
+      marketplaceVersion: pickField(['marketplaceVersion', 'facebookVersion', 'fbVersion']),
+      craigslistVersion: pickField(['craigslistVersion', 'craigslist']),
+      socialPostVersion: pickField(['socialPostVersion', 'socialVersion', 'socialPost']),
+      flyerTeaser: pickField(['flyerTeaser', 'teaser']),
+    };
 
     // Normalize keyFactsBlock if returned as an object or array
     if (parsed.keyFactsBlock && typeof parsed.keyFactsBlock !== 'string') {
-      if (typeof parsed.keyFactsBlock === 'object') {
+      if (typeof parsed.keyFactsBlock === 'object' && !Array.isArray(parsed.keyFactsBlock)) {
         const labelMap: Record<string, string> = {
           price: 'Price',
           askingprice: 'Price',
@@ -1037,6 +1120,9 @@ Respond in JSON only.`;
           .join('\n');
       }
     }
+
+    // Only deduct 1 AI credit after verifying we actually produced usable listing copy
+    const creditRecord = (req as any).deductAiCredits ? await (req as any).deductAiCredits() : (req as any).aiCreditRecord;
 
     return res.json({
       ...parsed,

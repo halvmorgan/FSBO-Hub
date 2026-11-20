@@ -669,6 +669,20 @@ export const SectionWebsite: React.FC<SectionWebsiteProps> = ({
           </div>
         </div>
 
+        {/* 2.5 About This Home (saved description only — omitted if empty) */}
+        {flyerDescription && (
+          <div className="max-w-5xl mx-auto px-6 sm:px-8 pt-2">
+            <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-stone-800 space-y-2">
+              <h3 className="font-heading font-bold text-lg text-[#0F2A44] dark:text-white">
+                About This Home
+              </h3>
+              <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed whitespace-pre-line">
+                {flyerDescription}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 3. Specs and Features */}
         <div className="max-w-5xl mx-auto p-6 sm:p-8 space-y-6">
           <h3 className="font-heading font-bold text-lg text-[#0F2A44] dark:text-white">

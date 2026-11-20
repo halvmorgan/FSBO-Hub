@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PropertyProfile, ListingCopyData, ActiveTab } from '../../types';
 import { WhyThisMatters } from '../common/WhyThisMatters';
 import { ListingErrorBoundary } from '../common/ListingErrorBoundary';
@@ -55,17 +55,18 @@ export const SectionListing: React.FC<SectionListingProps> = ({
 
   const savedPropertyDescription = sanitizeSavedDescription(property.description);
   const [draftDescription, setDraftDescription] = useState<string>(() => {
-    if (listingCopy) {
-      return formatAiText(listingCopy.fullDescription) || savedPropertyDescription;
-    }
-    return savedPropertyDescription;
+    if (savedPropertyDescription) return savedPropertyDescription;
+    if (listingCopy) return formatAiText(listingCopy.fullDescription);
+    return '';
   });
+  const lastSyncedSavedDescRef = useRef<string>(savedPropertyDescription);
   const [isSavingDesc, setIsSavingDesc] = useState(false);
   const [savedDescNotice, setSavedDescNotice] = useState(false);
   const [saveDescError, setSaveDescError] = useState<string | null>(null);
 
   useEffect(() => {
     const cleanPropDesc = sanitizeSavedDescription(property.description);
+    lastSyncedSavedDescRef.current = cleanPropDesc;
     setDraftDescription(cleanPropDesc || (listingCopy ? formatAiText(listingCopy.fullDescription) : ''));
     setSavedDescNotice(false);
     setSaveDescError(null);
@@ -73,8 +74,11 @@ export const SectionListing: React.FC<SectionListingProps> = ({
 
   useEffect(() => {
     const cleanPropDesc = sanitizeSavedDescription(property.description);
-    if (!draftDescription && cleanPropDesc) {
-      setDraftDescription(cleanPropDesc);
+    if (cleanPropDesc !== lastSyncedSavedDescRef.current) {
+      lastSyncedSavedDescRef.current = cleanPropDesc;
+      if (cleanPropDesc) {
+        setDraftDescription(cleanPropDesc);
+      }
     }
   }, [property.description]);
 
@@ -100,6 +104,8 @@ export const SectionListing: React.FC<SectionListingProps> = ({
     setIsGenerating(true);
     setErrorMsg(null);
     setUpgradePrompt(null);
+    setSaveDescError(null);
+    setSavedDescNotice(false);
 
     try {
       const data = await postAiJson<any>(
@@ -121,11 +127,32 @@ export const SectionListing: React.FC<SectionListingProps> = ({
         ? `${property.address} - For Sale By Owner`
         : 'For Sale By Owner Listing';
       const updatedCopy = sanitizeListingCopy(data, defaultHeadline, tone);
+      const generatedText = formatAiText(updatedCopy.fullDescription).trim();
+
+      if (!generatedText) {
+        throw new Error('Could not read a listing description from the AI response — please try again.');
+      }
 
       onUpdateListingCopy(updatedCopy);
-      setDraftDescription(formatAiText(updatedCopy.fullDescription));
-      setSavedDescNotice(false);
-      setSaveDescError(null);
+      setDraftDescription(generatedText);
+
+      // Automatically save generated description to the seller's listing record immediately
+      if (onUpdateProperty) {
+        setIsSavingDesc(true);
+        try {
+          await onUpdateProperty({
+            ...property,
+            description: generatedText,
+          });
+          lastSyncedSavedDescRef.current = generatedText;
+          setSavedDescNotice(true);
+        } catch (saveErr: any) {
+          console.error('Failed to auto-save listing description:', saveErr);
+          setSaveDescError('Generated description is shown below, but could not auto-save. Click "Save Changes" to save it to your listing.');
+        } finally {
+          setIsSavingDesc(false);
+        }
+      }
     } catch (err: any) {
       console.error(err);
       if (err instanceof AiCreditLimitError || err?.upgradeRequired) {
@@ -138,7 +165,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
     }
   };
 
-  const handleUseThisDescription = async () => {
+  const handleSaveDescription = async () => {
     const cleanText = sanitizeSavedDescription(draftDescription);
     if (!cleanText) {
       setSaveDescError('Please enter a listing description before saving.');
@@ -155,6 +182,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
         ...property,
         description: cleanText,
       });
+      lastSyncedSavedDescRef.current = cleanText;
       if (listingCopy) {
         onUpdateListingCopy({
           ...listingCopy,
@@ -170,6 +198,10 @@ export const SectionListing: React.FC<SectionListingProps> = ({
     }
   };
 
+  const hasAnySavedOrGeneratedCopy = Boolean(
+    savedPropertyDescription || draftDescription.trim() || listingCopy
+  );
+
   return (
     <div className="space-y-6">
       <WhyThisMatters
@@ -184,7 +216,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
           <div>
             <h3 className="font-heading font-bold text-base text-[#0F2A44] dark:text-white flex items-center gap-2">
               <FileText className="w-5 h-5 text-[#FF6B5A]" />
-              AI Listing Writer & Fair Housing Guardrail
+              AI Listing Writer &amp; Fair Housing Guardrail
             </h3>
             <p className="text-xs text-slate-500">
               Select your preferred tone. Gemini formats your property profile and upgrades into multi-platform listings.
@@ -196,7 +228,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
               type="button"
               disabled={isGenerating}
               onClick={handleGenerateCopy}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] dark:hover:bg-[#fa5644] transition-all disabled:opacity-50 shadow-md shrink-0"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] dark:hover:bg-[#fa5644] transition-all disabled:opacity-50 shadow-md shrink-0 cursor-pointer"
             >
               {isGenerating ? (
                 <>
@@ -206,7 +238,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 text-[#F2B544]" />
-                  {listingCopy ? 'Regenerate All Versions' : 'Generate Complete Listing'}
+                  {hasAnySavedOrGeneratedCopy ? 'Regenerate All Versions' : 'Generate Complete Listing'}
                 </>
               )}
             </button>
@@ -314,26 +346,30 @@ export const SectionListing: React.FC<SectionListingProps> = ({
         </div>
       )}
 
-      {/* Output Versions Wrapped in Error Boundary */}
+      {/* Output Versions & Saved Description Editor Wrapped in Error Boundary */}
       <ListingErrorBoundary onReset={() => setErrorMsg(null)}>
-        {listingCopy ? (
+        {hasAnySavedOrGeneratedCopy ? (
           <div className="space-y-6">
-            {/* 1. Full MLS & Website Description */}
+            {/* 1. Primary Listing Description (Single Canonical Field: property.description) */}
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF6B5A]">
-                    Primary Version (Zillow, FSBO Portals, Property Website)
+                    Primary Version (Zillow, FSBO Portals, Buyer View &amp; Property Website)
                   </span>
                   <h4 className="font-heading font-bold text-base text-[#0F2A44] dark:text-white">
-                    {formatAiText(listingCopy.headline, `${property.address} - Move-In Ready Home`)}
+                    {listingCopy
+                      ? formatAiText(listingCopy.headline, `${property.address || 'Your Home'} - Move-In Ready Home`)
+                      : property.address
+                      ? `${property.address} - About This Home`
+                      : 'About This Home'}
                   </h4>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     disabled={isSavingDesc}
-                    onClick={handleUseThisDescription}
+                    onClick={handleSaveDescription}
                     className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-sm cursor-pointer"
                   >
                     {isSavingDesc ? (
@@ -344,7 +380,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
                     ) : (
                       <>
                         <Check className="w-3.5 h-3.5" />
-                        Use This Description
+                        Save Changes
                       </>
                     )}
                   </button>
@@ -353,10 +389,12 @@ export const SectionListing: React.FC<SectionListingProps> = ({
                     onClick={() =>
                       handleCopy(
                         'full',
-                        `${formatAiText(listingCopy.headline)}\n\n${draftDescription || formatAiText(listingCopy.fullDescription)}\n\nKEY FACTS:\n${formatKeyFacts(listingCopy.keyFactsBlock)}\n\nRECENT UPGRADES:\n${formatUpgradesList(listingCopy.upgradesListBlock)}`
+                        listingCopy
+                          ? `${formatAiText(listingCopy.headline)}\n\n${draftDescription || formatAiText(listingCopy.fullDescription)}\n\nKEY FACTS:\n${formatKeyFacts(listingCopy.keyFactsBlock)}\n\nRECENT UPGRADES:\n${formatUpgradesList(listingCopy.upgradesListBlock)}`
+                          : draftDescription
                       )
                     }
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] transition-all"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-[#0F2A44] hover:bg-[#1A3D60] dark:bg-[#FF6B5A] transition-all cursor-pointer"
                   >
                     {copiedKey === 'full' ? (
                       <>
@@ -366,7 +404,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
                     ) : (
                       <>
                         <Copy className="w-3.5 h-3.5" />
-                        Copy Full Listing
+                        {listingCopy ? 'Copy Full Listing' : 'Copy Description'}
                       </>
                     )}
                   </button>
@@ -379,16 +417,15 @@ export const SectionListing: React.FC<SectionListingProps> = ({
                     htmlFor="listing-writer-description-input"
                     className="text-[11px] font-semibold text-slate-500 dark:text-slate-400"
                   >
-                    Edit your buyer-facing description below, then click &ldquo;Use This Description&rdquo; to publish it to your listing:
+                    Automatically saved to your listing. Edit the text below anytime and click &ldquo;Save Changes&rdquo;:
                   </label>
-                  {savedPropertyDescription &&
-                    savedPropertyDescription === draftDescription.trim() &&
-                    !savedDescNotice && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                        <Check className="w-3 h-3" />
-                        Currently saved on your listing
-                      </span>
-                    )}
+                  {(savedDescNotice ||
+                    (savedPropertyDescription &&
+                      savedPropertyDescription === draftDescription.trim())) && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                      Saved ✓
+                    </span>
+                  )}
                 </div>
                 <textarea
                   id="listing-writer-description-input"
@@ -405,7 +442,7 @@ export const SectionListing: React.FC<SectionListingProps> = ({
                 {savedDescNotice && (
                   <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
                     <Check className="w-4 h-4 shrink-0" />
-                    <span>Saved — buyers will now see this description</span>
+                    <span>Saved ✓ — buyers will now see this description</span>
                   </div>
                 )}
                 {saveDescError && (
@@ -416,217 +453,164 @@ export const SectionListing: React.FC<SectionListingProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs">
-                  <span className="font-bold text-[#0F2A44] dark:text-white block mb-1">
-                    Key Facts Block:
-                  </span>
-                  <div className="text-slate-600 dark:text-slate-400 whitespace-pre-line font-mono text-[11px]">
-                    {formatKeyFacts(listingCopy.keyFactsBlock)}
+              {listingCopy && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+                    <span className="font-bold text-[#0F2A44] dark:text-white block mb-1">
+                      Key Facts Block:
+                    </span>
+                    <div className="text-slate-600 dark:text-slate-400 whitespace-pre-line font-mono text-[11px]">
+                      {formatKeyFacts(listingCopy.keyFactsBlock)}
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+                    <span className="font-bold text-[#0F2A44] dark:text-white block mb-1">
+                      Upgrades Summary:
+                    </span>
+                    <div className="text-slate-600 dark:text-slate-400 whitespace-pre-line">
+                      {formatUpgradesList(listingCopy.upgradesListBlock)}
+                    </div>
                   </div>
                 </div>
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs">
-                  <span className="font-bold text-[#0F2A44] dark:text-white block mb-1">
-                    Upgrades Summary:
-                  </span>
-                  <div className="text-slate-600 dark:text-slate-400 whitespace-pre-line">
-                    {formatUpgradesList(listingCopy.upgradesListBlock)}
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* 2. Platform Formats (Facebook Marketplace & Craigslist) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Facebook Marketplace */}
-              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
-                      Facebook Marketplace Format
-                    </span>
-                    <h4 className="font-bold text-sm text-[#0F2A44] dark:text-white">
-                      Optimized for Mobile Feed
-                    </h4>
+            {listingCopy && (
+              <>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Facebook Marketplace */}
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
+                          Facebook Marketplace Format
+                        </span>
+                        <h4 className="font-bold text-sm text-[#0F2A44] dark:text-white">
+                          Optimized for Mobile Feed
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('fb', formatAiText(listingCopy.marketplaceVersion))}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all"
+                      >
+                        {copiedKey === 'fb' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-300" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            Copy FB Post
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl max-h-60 overflow-y-auto">
+                      {formatAiText(listingCopy.marketplaceVersion)}
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy('fb', formatAiText(listingCopy.marketplaceVersion))}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all"
-                  >
-                    {copiedKey === 'fb' ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-300" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        Copy FB Post
-                      </>
-                    )}
-                  </button>
-                </div>
 
-                <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl max-h-60 overflow-y-auto">
-                  {formatAiText(listingCopy.marketplaceVersion)}
-                </div>
-              </div>
+                  {/* Craigslist Version */}
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600">
+                          Craigslist Format
+                        </span>
+                        <h4 className="font-bold text-sm text-[#0F2A44] dark:text-white">
+                          Scannable Itemized Format
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('cl', formatAiText(listingCopy.craigslistVersion))}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-purple-700 hover:bg-purple-800 transition-all"
+                      >
+                        {copiedKey === 'cl' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-300" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            Copy Craigslist
+                          </>
+                        )}
+                      </button>
+                    </div>
 
-              {/* Craigslist Version */}
-              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600">
-                      Craigslist Format
-                    </span>
-                    <h4 className="font-bold text-sm text-[#0F2A44] dark:text-white">
-                      Scannable Itemized Format
-                    </h4>
+                    <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl max-h-60 overflow-y-auto font-mono text-[11px]">
+                      {formatAiText(listingCopy.craigslistVersion)}
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy('cl', formatAiText(listingCopy.craigslistVersion))}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-purple-700 hover:bg-purple-800 transition-all"
-                  >
-                    {copiedKey === 'cl' ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-300" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        Copy Craigslist
-                      </>
-                    )}
-                  </button>
                 </div>
 
-                <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl max-h-60 overflow-y-auto font-mono text-[11px]">
-                  {formatAiText(listingCopy.craigslistVersion)}
-                </div>
-              </div>
-            </div>
+                {/* 3. Social Post & Yard Flyer Teaser */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Social Post */}
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF6B5A]">
+                        Social Announcement (Nextdoor / Instagram)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('social', formatAiText(listingCopy.socialPostVersion))}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        {copiedKey === 'social' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <div className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-line bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl">
+                      {formatAiText(listingCopy.socialPostVersion)}
+                    </div>
+                  </div>
 
-            {/* 3. Social Post & Yard Flyer Teaser */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Social Post */}
-              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF6B5A]">
-                    Social Announcement (Nextdoor / Instagram)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy('social', formatAiText(listingCopy.socialPostVersion))}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    {copiedKey === 'social' ? 'Copied!' : 'Copy'}
-                  </button>
+                  {/* 2-Sentence Flyer Teaser */}
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#F2B544]">
+                        Yard Flyer Teaser (Exact 2 Sentences)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('flyer', formatAiText(listingCopy.flyerTeaser))}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        {copiedKey === 'flyer' ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <div className="text-xs text-slate-800 dark:text-slate-200 font-semibold italic bg-amber-50/50 dark:bg-amber-950/20 p-3.5 rounded-2xl border border-amber-200/60">
+                      "{formatAiText(listingCopy.flyerTeaser)}"
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-line bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-2xl">
-                  {formatAiText(listingCopy.socialPostVersion)}
-                </div>
-              </div>
-
-              {/* 2-Sentence Flyer Teaser */}
-              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#F2B544]">
-                    Yard Flyer Teaser (Exact 2 Sentences)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy('flyer', formatAiText(listingCopy.flyerTeaser))}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    {copiedKey === 'flyer' ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <div className="text-xs text-slate-800 dark:text-slate-200 font-semibold italic bg-amber-50/50 dark:bg-amber-950/20 p-3.5 rounded-2xl border border-amber-200/60">
-                  "{formatAiText(listingCopy.flyerTeaser)}"
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         ) : (
-          <div className="space-y-6">
-            {savedPropertyDescription && (
-              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
-                      Saved Listing Description
-                    </span>
-                    <h4 className="font-heading font-bold text-base text-[#0F2A44] dark:text-white">
-                      Current Description Shown to Buyers
-                    </h4>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isSavingDesc}
-                    onClick={handleUseThisDescription}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-sm cursor-pointer"
-                  >
-                    {isSavingDesc ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        Use This Description
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <textarea
-                  rows={6}
-                  value={draftDescription}
-                  onChange={(e) => {
-                    setDraftDescription(e.target.value);
-                    setSavedDescNotice(false);
-                    setSaveDescError(null);
-                  }}
-                  placeholder="Write or edit your property description..."
-                  className="w-full text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-[#FF6B5A]"
-                />
-                {savedDescNotice && (
-                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-                    <Check className="w-4 h-4 shrink-0" />
-                    <span>Saved — buyers will now see this description</span>
-                  </div>
-                )}
-                {saveDescError && (
-                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-medium text-red-700 dark:text-red-300">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span>{saveDescError}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
-              <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <h4 className="text-sm font-bold text-[#0F2A44] dark:text-white">
-                No listing copy generated yet
-              </h4>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto mb-4">
-                Click "Generate Complete Listing" above to instantly craft 5 compliant formats for Zillow, Facebook Marketplace, Craigslist, and your yard flyer.
-              </p>
-              <button
-                type="button"
-                disabled={isGenerating}
-                onClick={handleGenerateCopy}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-md shadow-[#FF6B5A]/25"
-              >
-                <Sparkles className="w-4 h-4 text-[#F2B544]" />
-                Generate Complete Listing
-              </button>
-            </div>
+          <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+            <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+            <h4 className="text-sm font-bold text-[#0F2A44] dark:text-white">
+              No listing copy generated yet
+            </h4>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto mb-4">
+              Click "Generate Complete Listing" above to instantly craft 5 compliant formats for Zillow, Facebook Marketplace, Craigslist, and your yard flyer.
+            </p>
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={handleGenerateCopy}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-[#FF6B5A] hover:bg-[#fa5644] shadow-md shadow-[#FF6B5A]/25"
+            >
+              <Sparkles className="w-4 h-4 text-[#F2B544]" />
+              Generate Complete Listing
+            </button>
           </div>
         )}
       </ListingErrorBoundary>

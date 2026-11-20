@@ -177,6 +177,68 @@ export function normalizeTone(tone?: string): 'Warm' | 'Professional' | 'Luxury'
   return 'Warm';
 }
 
+function unwrapCopyPayload(raw: any): Record<string, any> | null {
+  if (raw === undefined || raw === null) return null;
+
+  if (typeof raw === 'string') {
+    const trimmed = raw
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return unwrapCopyPayload(JSON.parse(trimmed));
+      } catch {
+        const firstBrace = trimmed.indexOf('{');
+        const lastBrace = trimmed.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          try {
+            return unwrapCopyPayload(JSON.parse(trimmed.slice(firstBrace, lastBrace + 1)));
+          } catch {}
+        }
+      }
+    }
+    return { fullDescription: trimmed };
+  }
+
+  if (Array.isArray(raw)) {
+    const firstObj = raw.find((item) => item && typeof item === 'object');
+    if (firstObj) return unwrapCopyPayload(firstObj);
+    const firstStr = raw.find((item) => typeof item === 'string' && item.trim());
+    return firstStr ? { fullDescription: firstStr.trim() } : null;
+  }
+
+  if (typeof raw === 'object') {
+    const candidates = [
+      raw.listing,
+      raw.listingCopy,
+      raw.data,
+      raw.result,
+      raw.output,
+      raw.response,
+    ];
+    for (const nested of candidates) {
+      if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+        const merged = { ...raw, ...nested };
+        return merged;
+      }
+    }
+    return raw as Record<string, any>;
+  }
+
+  return null;
+}
+
+function pickFirstText(obj: Record<string, any>, keys: string[], fallback = ''): string {
+  for (const key of keys) {
+    const val = obj[key];
+    const formatted = formatAiText(val, '').trim();
+    if (formatted) return formatted;
+  }
+  return fallback;
+}
+
 /**
  * Sanitizes entire AI listing-copy response object into clean typed strings
  */
@@ -185,7 +247,8 @@ export function sanitizeListingCopy(
   defaultHeadline = 'Move-In Ready Home',
   fallbackTone: 'Warm' | 'Professional' | 'Luxury' | 'Investor' = 'Warm'
 ): ListingCopyData {
-  if (!raw || typeof raw !== 'object') {
+  const payload = unwrapCopyPayload(raw);
+  if (!payload) {
     return {
       tone: fallbackTone,
       headline: defaultHeadline,
@@ -205,7 +268,7 @@ export function sanitizeListingCopy(
     };
   }
 
-  const rawAudit = raw.fairHousingAudit;
+  const rawAudit = payload.fairHousingAudit;
   const isClean = typeof rawAudit?.isClean === 'boolean' ? rawAudit.isClean : true;
   const flaggedPhrases = Array.isArray(rawAudit?.flaggedPhrases)
     ? rawAudit.flaggedPhrases.map((p: any) => String(p))
@@ -215,21 +278,43 @@ export function sanitizeListingCopy(
     'Verified compliant with federal Fair Housing laws.'
   );
 
+  const fullDescription = pickFirstText(payload, [
+    'fullDescription',
+    'description',
+    'listingDescription',
+    'mlsDescription',
+    'propertyDescription',
+    'full_description',
+    'listing_description',
+    'about',
+    'aboutThisHome',
+    'body',
+    'text',
+    'copy',
+    'content',
+  ]);
+
+  const headline = pickFirstText(
+    payload,
+    ['headline', 'title', 'listingHeadline'],
+    defaultHeadline
+  );
+
   return {
-    tone: normalizeTone(raw.tone || fallbackTone),
-    headline: formatAiText(raw.headline, defaultHeadline),
-    fullDescription: formatAiText(raw.fullDescription, ''),
-    keyFactsBlock: formatKeyFacts(raw.keyFactsBlock),
-    upgradesListBlock: formatUpgradesList(raw.upgradesListBlock),
-    marketplaceVersion: formatAiText(raw.marketplaceVersion, ''),
-    craigslistVersion: formatAiText(raw.craigslistVersion, ''),
-    socialPostVersion: formatAiText(raw.socialPostVersion, ''),
-    flyerTeaser: formatAiText(raw.flyerTeaser, ''),
+    tone: normalizeTone(payload.tone || fallbackTone),
+    headline,
+    fullDescription,
+    keyFactsBlock: formatKeyFacts(payload.keyFactsBlock ?? payload.keyFacts),
+    upgradesListBlock: formatUpgradesList(payload.upgradesListBlock ?? payload.upgradesList),
+    marketplaceVersion: pickFirstText(payload, ['marketplaceVersion', 'facebookVersion', 'fbVersion']),
+    craigslistVersion: pickFirstText(payload, ['craigslistVersion', 'craigslist']),
+    socialPostVersion: pickFirstText(payload, ['socialPostVersion', 'socialVersion', 'socialPost']),
+    flyerTeaser: pickFirstText(payload, ['flyerTeaser', 'teaser']),
     fairHousingAudit: {
       isClean,
       flaggedPhrases,
       complianceNote,
     },
-    lastGenerated: raw.lastGenerated || new Date().toISOString(),
+    lastGenerated: payload.lastGenerated || new Date().toISOString(),
   };
 }
