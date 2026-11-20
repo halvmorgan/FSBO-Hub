@@ -10,7 +10,7 @@
         "displayName": { "type": "string", "description": "User display name." },
         "photoURL": { "type": "string", "description": "Avatar image URL." },
         "role": { "type": "string", "enum": ["user", "admin"], "description": "Role permission level." },
-        "plan": { "type": "string", "enum": ["trial", "per_listing", "pro"], "description": "Subscription or purchase tier." },
+        "plan": { "type": "string", "enum": ["trial", "per_listing", "bundle", "pro"], "description": "Subscription or purchase tier." },
         "planStatus": { "type": "string", "enum": ["active", "trialing", "past_due", "canceled", "expired"], "description": "Current billing status." },
         "trialEndsAt": { "type": "string", "description": "ISO timestamp when the 7-day trial ends." },
         "planExpiresAt": { "type": "string", "description": "ISO timestamp for plan expiration or renewal." },
@@ -203,7 +203,7 @@
     },
     "/listings/{listingId}": {
       "schema": { "$ref": "Listing" },
-      "description": "Public property landing pages viewable by anyone at /listing/<listingId>."
+      "description": "Public property landing pages viewable at /listing/<listingId> once the owner upgrades to an active paid plan."
     },
     "/listings/{listingId}/inquiries/{inquiryId}": {
       "schema": { "$ref": "ListingInquiry" },

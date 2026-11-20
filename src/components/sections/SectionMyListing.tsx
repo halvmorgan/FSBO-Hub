@@ -37,6 +37,7 @@ import {
   Layers,
   Car,
   Compass,
+  Lock,
 } from 'lucide-react';
 import { doc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
@@ -46,7 +47,7 @@ import {
   hasLegacySampleText,
   isStockPhotoUrl,
 } from '../../lib/sampleScrub';
-import { STRIPE_CHECKOUT_NOTICE_TEXT } from '../common/StripeBillingNotice';
+import { STRIPE_CHECKOUT_NOTICE_TEXT, StripeBillingNotice } from '../common/StripeBillingNotice';
 
 interface SectionMyListingProps {
   property: PropertyProfile;
@@ -81,8 +82,9 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
 
-  // Copy Link State
+  // Copy Link & Locked Upgrade Prompt State
   const [copiedLink, setCopiedLink] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
 
   // Contact Form State
   const [buyerName, setBuyerName] = useState('');
@@ -205,8 +207,8 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
   } ${property.zip || ''}`.trim();
 
   // Status Badge
-  const isPublished = Boolean(property.published);
-  const statusLabel = isPublished ? 'FOR SALE BY OWNER' : 'COMING SOON';
+  const isPublished = !isTrial && Boolean(property.published);
+  const statusLabel = isPublished ? 'FOR SALE BY OWNER' : isTrial ? 'PREVIEW ONLY' : 'COMING SOON';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-stone-950 text-[#0F2A44] dark:text-stone-100 font-sans pb-16">
@@ -222,13 +224,14 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
               {isTrial && (
                 <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F2B544]/20 text-[#F2B544] text-[11px] font-semibold border border-[#F2B544]/30">
                   <ShieldAlert className="w-3 h-3" />
-                  <span>Preview only. Upgrade to publish your listing.</span>
+                  <span>Preview only &bull; Upgrade to Publish</span>
                   {onOpenPricing && (
                     <button
+                      type="button"
                       onClick={onOpenPricing}
                       className="underline font-bold hover:text-white ml-1 cursor-pointer"
                     >
-                      Upgrade
+                      Upgrade to Publish
                     </button>
                   )}
                 </div>
@@ -247,34 +250,71 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
-                title={publicShareUrl}
-              >
-                {copiedLink ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400">Copied Link!</span>
-                  </>
-                ) : (
-                  <>
-                    <Share2 className="w-3.5 h-3.5 text-[#FF6B5A]" />
-                    <span>Copy Share Link</span>
-                  </>
-                )}
-              </button>
+              {isTrial ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setUpgradeModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/90 font-semibold transition-colors cursor-pointer"
+                    title="Upgrade to Publish to unlock your share link"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-[#F2B544]" />
+                    <span>Share Link (Locked)</span>
+                  </button>
 
-              <a
-                href={publicShareUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
-                <span>View as Buyer</span>
-              </a>
+                  <button
+                    type="button"
+                    onClick={() => setUpgradeModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/90 font-semibold transition-colors cursor-pointer"
+                    title="Upgrade to Publish to unlock your public buyer link"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-[#F2B544]" />
+                    <span>View as Buyer (Locked)</span>
+                  </button>
+
+                  {onOpenPricing && (
+                    <button
+                      type="button"
+                      onClick={onOpenPricing}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F2B544] hover:bg-[#e5a836] text-[#0F2A44] font-bold transition-colors shadow-sm cursor-pointer"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Upgrade to Publish</span>
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                    title={publicShareUrl}
+                  >
+                    {copiedLink ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">Copied Link!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="w-3.5 h-3.5 text-[#FF6B5A]" />
+                        <span>Copy Share Link</span>
+                      </>
+                    )}
+                  </button>
+
+                  <a
+                    href={publicShareUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
+                    <span>View as Buyer</span>
+                  </a>
+                </>
+              )}
 
               {onNavigate && (
                 <button
@@ -1155,6 +1195,72 @@ export const SectionMyListing: React.FC<SectionMyListingProps> = ({
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. UPGRADE TO PUBLISH MODAL (when trial seller clicks locked Share / Buyer Link) */}
+      {upgradeModalOpen && isTrial && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setUpgradeModalOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-stone-900 rounded-3xl max-w-md w-full p-6 sm:p-7 border border-stone-200 dark:border-stone-800 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-[#F2B544] flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold font-heading text-[#0F2A44] dark:text-white">
+                    Upgrade to Publish
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-stone-400">
+                    Your in-app preview is ready while you build your listing.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUpgradeModalOpen(false)}
+                className="p-1.5 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-sm text-stone-600 dark:text-stone-300 leading-relaxed">
+              Sharing and public buyer links (<span className="font-mono text-xs">/listing/...</span>) are locked during the 7-day free trial. Upgrade to a paid plan to automatically unlock your public listing page for buyers.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+              {onOpenPricing && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUpgradeModalOpen(false);
+                    onOpenPricing();
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#FF6B5A] hover:bg-[#e85a4a] text-white text-xs font-bold shadow-md transition-colors cursor-pointer"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Upgrade to Publish</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setUpgradeModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-800 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Keep Previewing
+              </button>
+            </div>
+
+            {onOpenPricing && <StripeBillingNotice />}
           </div>
         </div>
       )}

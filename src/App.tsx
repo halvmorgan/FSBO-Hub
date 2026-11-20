@@ -1093,6 +1093,10 @@ function AppContent() {
             setCurrentView(currentUser ? 'app' : 'landing');
           }}
           onGoToDashboard={navigateToDashboard}
+          onNavigatePricing={() => {
+            window.history.pushState({}, '', '/pricing');
+            setCurrentView('pricing');
+          }}
           onLogout={handleLogout}
         />
       </Suspense>
@@ -1502,7 +1506,7 @@ function AppContent() {
               openHouses={openHouses}
               inquiriesCount={inquiries.length}
               isSellerView={true}
-              isTrial={userProfile?.plan === 'trial'}
+              isTrial={!(userProfile && ['per_listing', 'bundle', 'pro'].includes(userProfile.plan) && userProfile.planStatus === 'active')}
               onEditListing={() => setShowWizard(true)}
               onNavigate={handleSelectAuthenticatedTab}
               onAddInquiry={(inq) => setInquiries((prev) => [inq, ...prev])}

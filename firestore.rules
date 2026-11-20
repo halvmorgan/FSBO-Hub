@@ -27,12 +27,33 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 128;
     }
 
+    function hasPaidActivePlan(userId) {
+      return userId is string &&
+        exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.plan in ['per_listing', 'bundle', 'pro'] &&
+        get(/databases/$(database)/documents/users/$(userId)).data.planStatus == 'active';
+    }
+
+    function isListingPubliclyPublished(data) {
+      return data != null &&
+        (!('published' in data) || data.published == true) &&
+        hasPaidActivePlan(data.ownerUid);
+    }
+
     // Users Collection
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
-      allow create: if isOwner(userId) && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role != 'admin' || isAdmin());
-      allow update: if (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isAdmin())) || isAdmin();
+      allow create: if isOwner(userId) &&
+        (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role != 'admin' || isAdmin()) &&
+        (!request.resource.data.keys().hasAny(['plan']) || request.resource.data.plan == 'trial' || isAdmin()) &&
+        (!request.resource.data.keys().hasAny(['planStatus']) || request.resource.data.planStatus == 'trialing' || isAdmin());
+      allow update: if (
+        isOwner(userId) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'plan', 'planStatus']) ||
+         (request.resource.data.plan == 'trial' && request.resource.data.planStatus == 'trialing') ||
+         isAdmin())
+      ) || isAdmin();
       allow delete: if isOwner(userId) || isAdmin();
 
       // User's Properties Subcollection
@@ -43,22 +64,42 @@ service cloud.firestore {
 
     // Public Property Listings (/listing/<listingId>)
     match /listings/{listingId} {
-      // Readable by anyone without signing in (read-only buyer view)
-      allow get: if true;
-      allow list: if true;
-      allow create: if isSignedIn() && (request.resource.data.ownerUid == request.auth.uid || isAdmin());
-      allow update: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
-      allow delete: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
+      // Public visitors can only read a listing if it is published AND its owner has an active paid plan.
+      // Listing owners and admins can always read their own listing doc.
+      allow get: if isValidId(listingId) && resource != null && (
+        isOwner(resource.data.ownerUid) ||
+        isAdmin() ||
+        isListingPubliclyPublished(resource.data)
+      );
+      allow list: if isAdmin() || (isSignedIn() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isValidId(listingId) && isSignedIn() && (request.resource.data.ownerUid == request.auth.uid || isAdmin());
+      allow update: if isValidId(listingId) && isSignedIn() && (
+        (resource.data.ownerUid == request.auth.uid && request.resource.data.ownerUid == resource.data.ownerUid) ||
+        isAdmin()
+      );
+      allow delete: if isValidId(listingId) && isSignedIn() && (resource.data.ownerUid == request.auth.uid || isAdmin());
 
       // Buyer Inquiries & Showing Requests on this listing
       match /inquiries/{inquiryId} {
-        // Any visitor/buyer can submit a lead / contact request
-        allow create: if request.resource.data.buyerName is string &&
+        // Visitors can only submit inquiries on published listings owned by an active paid user
+        allow create: if isValidId(listingId) &&
+                         isValidId(inquiryId) &&
+                         exists(/databases/$(database)/documents/listings/$(listingId)) &&
+                         (
+                           isListingPubliclyPublished(get(/databases/$(database)/documents/listings/$(listingId)).data) ||
+                           isOwner(get(/databases/$(database)/documents/listings/$(listingId)).data.ownerUid) ||
+                           isAdmin()
+                         ) &&
+                         request.resource.data.buyerName is string &&
+                         request.resource.data.buyerName.size() > 0 &&
                          request.resource.data.buyerName.size() <= 200 &&
-                         request.resource.data.buyerEmail is string;
+                         request.resource.data.buyerEmail is string &&
+                         request.resource.data.buyerEmail.size() > 0 &&
+                         request.resource.data.buyerEmail.size() <= 254;
         // Only property owner or admin can read and manage buyer leads
-        allow get, list, update, delete: if isSignedIn() && (
-          get(/databases/$(database)/documents/listings/$(listingId)).data.ownerUid == request.auth.uid ||
+        allow get, list, update, delete: if isValidId(listingId) && isSignedIn() && (
+          (exists(/databases/$(database)/documents/listings/$(listingId)) &&
+           get(/databases/$(database)/documents/listings/$(listingId)).data.ownerUid == request.auth.uid) ||
           isAdmin()
         );
       }
